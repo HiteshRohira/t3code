@@ -65,6 +65,7 @@ import {
   LinkIcon,
   MessageSquareIcon,
   PaletteIcon,
+  PuzzleIcon,
   RotateCcwIcon,
   SettingsIcon,
   MonitorIcon,
@@ -162,6 +163,7 @@ import {
   ADDON_ICON_CLASS,
   browseInputEndPaddingClass,
   buildBrowseGroups,
+  buildPluginCommandActionItems,
   buildRootGroups,
   buildLinkedThreadActionItems,
   buildCommandPaletteRows,
@@ -191,6 +193,7 @@ import {
   remoteProjectInputPlaceholder,
   reduceCommandPaletteSearchState,
   type SearchOverlayMode,
+  resolvePluginCommandEnvironmentId,
 } from "./CommandPalette.logic";
 import { resolveEnvironmentOptionLabel } from "./BranchToolbar.logic";
 import { CommandPaletteContent } from "./CommandPaletteContent";
@@ -432,6 +435,19 @@ function OpenCommandPaletteDialog(props: {
   const { activeDraftThread, activeThread, defaultProjectRef, handleNewThread } =
     useHandleNewThread();
   const paletteRouteTarget = useThreadRouteTarget();
+  const pluginCommandEnvironmentId = resolvePluginCommandEnvironmentId({
+    activeDraftEnvironmentId: activeDraftThread?.environmentId ?? null,
+    activeThreadEnvironmentId: activeThread?.environmentId ?? null,
+    primaryEnvironmentId,
+  });
+  const pluginCommandCatalog = useEnvironmentQuery(
+    pluginCommandEnvironmentId === null
+      ? null
+      : serverEnvironment.pluginCommands({ environmentId: pluginCommandEnvironmentId, input: {} }),
+  ).data;
+  const invokePluginCommand = useAtomCommand(serverEnvironment.invokePluginCommand, {
+    reportFailure: false,
+  });
   const projects = useProjects();
   const referenceThreadRef =
     pathname === "/pull-requests"
@@ -1566,6 +1582,36 @@ function OpenCommandPaletteDialog(props: {
         });
       },
     });
+  }
+
+  if (pluginCommandEnvironmentId !== null && pluginCommandCatalog !== null) {
+    const commandEnvironmentId = pluginCommandEnvironmentId;
+    const catalog = pluginCommandCatalog;
+    actionItems.push(
+      ...buildPluginCommandActionItems({
+        commands: catalog.commands,
+        icon: <PuzzleIcon className={ITEM_ICON_CLASS} />,
+        surface:
+          typeof window !== "undefined" && window.desktopBridge !== undefined ? "desktop" : "web",
+        run: async (command) => {
+          const result = await invokePluginCommand({
+            environmentId: commandEnvironmentId,
+            input: { generation: catalog.generation, id: command.id },
+          });
+          if (result._tag === "Failure") {
+            if (isAtomCommandInterrupted(result)) return;
+            throw squashAtomCommandFailure(result);
+          }
+          toastManager.add(
+            stackedThreadToast({
+              type: result.value.tone === "success" ? "success" : "info",
+              title: command.label,
+              description: result.value.message,
+            }),
+          );
+        },
+      }),
+    );
   }
 
   const rootGroups = buildRootGroups({ actionItems, recentThreadItems });
