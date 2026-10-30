@@ -633,6 +633,34 @@ export function defineRuntimeContract(name: string, createRuntime: TestPluginRun
       ),
     );
 
+    // Known limit: a host fiber resumed from plugin code keeps the host's async context, so the
+    // runtime cannot tell it apart from any other host caller. It waits for the current
+    // transition instead of failing; a callback that awaits such a call would never settle.
+    it.effect("serializes runtime operations bridged through a host-owned fiber", () =>
+      Effect.scoped(
+        Effect.gen(function* () {
+          const runtime = yield* createRuntime();
+          const nested = makeEffectCallback<Exit.Exit<PluginRuntimeSnapshot, unknown>, never>();
+          const nestedFiber = yield* Effect.forkChild(nested.await);
+          yield* Effect.yieldNow;
+          const bridged: PluginDefinition = {
+            id: "acme.bridged",
+            version: "1.0.0",
+            activate() {
+              nested.resume(Effect.exit(runtime.reconcile([])));
+            },
+          };
+
+          const activated = yield* runtime.reconcile([bridged]);
+          const nestedExit = yield* Fiber.join(nestedFiber);
+
+          expect(activated.active).toEqual(["acme.bridged"]);
+          expect(Exit.isSuccess(nestedExit)).toBe(true);
+          if (Exit.isSuccess(nestedExit)) expect(nestedExit.value.active).toEqual([]);
+        }),
+      ),
+    );
+
     it.effect("rejects runtime operations reentered from plugin finalizers", () =>
       Effect.scoped(
         Effect.gen(function* () {

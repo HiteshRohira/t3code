@@ -67,6 +67,22 @@ describe("RPC authorization scopes", () => {
     }
   });
 
+  it("keeps plugin package lifecycle, which runs local code, behind maintain scope", () => {
+    for (const method of [
+      WS_METHODS.pluginPackagesEnable,
+      WS_METHODS.pluginPackagesDisable,
+      WS_METHODS.pluginPackagesReload,
+    ]) {
+      expect(requiredScopeForRpcMethod(method)).toBe(AuthEnvironmentMaintainScope);
+    }
+    expect(requiredScopeForRpcMethod(WS_METHODS.pluginPackagesStatus)).toBe(
+      AuthOrchestrationReadScope,
+    );
+    expect(requiredScopeForRpcMethod(WS_METHODS.pluginCommandsInvoke)).toBe(
+      AuthOrchestrationOperateScope,
+    );
+  });
+
   it("rejects unknown RPC method names", () => {
     for (const method of ["server.notRegistered", "toString", "constructor"]) {
       expect(() => requiredScopeForRpcMethod(method)).toThrow(

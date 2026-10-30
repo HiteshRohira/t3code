@@ -13,3 +13,7 @@ plugins register detached, deeply frozen, json-compatible declarative metadata a
 `contributions(slot)` returns the committed generation with its entries. hosts must pass that generation to `useContribution(...)`; stale callers fail instead of invoking a handler from a different composition. invocation, reconciliation, and shutdown share the same transition authority, so a plugin scope cannot retire while its contribution is running.
 
 contribution ids are unique within each slot across the active composition. duplicate ids fail candidate validation and leave the previous generation live.
+
+## limits
+
+reentrancy is detected through the async context of plugin callbacks. code a plugin starts itself (promises, fresh effect runtimes, contribution fibers) is rejected with `PluginRuntimeReentrancyError`. a host-owned fiber that plugin code resumes keeps the host's context, so its runtime calls wait for the current transition like any host caller. if the plugin callback then awaits that call, the transition never finishes. plugins only receive their activation context, so this needs host code that hands fibers to plugins; hosts must not do that.

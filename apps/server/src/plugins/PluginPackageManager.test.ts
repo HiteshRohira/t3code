@@ -507,6 +507,35 @@ it.layer(NodeServices.layer)("plugin package lifecycle", (it) => {
     }),
   );
 
+  it.effect("rejects capability declarations that package loading cannot enforce", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3code-plugin-package-requires-test-",
+      });
+      const directory = `${baseDir}/userdata/plugins/needs-missing`;
+      yield* fileSystem.makeDirectory(directory, { recursive: true });
+      yield* fileSystem.writeFileString(
+        `${directory}/t3-plugin.json`,
+        encodeManifest({ ...manifest, requires: ["com.example.missing@1"] }),
+      );
+
+      yield* useEnvironment(
+        baseDir,
+        Effect.gen(function* () {
+          const manager = yield* PluginPackageManager.PluginPackageManager;
+          const status = yield* manager.status;
+          expect(status).toMatchObject({
+            errors: [
+              { directory: "needs-missing", error: "requires declarations are not supported yet" },
+            ],
+            packages: [],
+          });
+        }),
+      );
+    }),
+  );
+
   it.effect("reports cleanup failures after disabling the committed package", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;

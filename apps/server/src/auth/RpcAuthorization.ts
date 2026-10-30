@@ -61,11 +61,13 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.serverProbe]: AuthOrchestrationReadScope,
   [WS_METHODS.serverGetConfig]: AuthOrchestrationReadScope,
   [WS_METHODS.pluginCommandsList]: AuthOrchestrationReadScope,
+  // Enabling a package is the trust decision; commands of enabled packages are ordinary operations.
   [WS_METHODS.pluginCommandsInvoke]: AuthOrchestrationOperateScope,
   [WS_METHODS.pluginPackagesStatus]: AuthOrchestrationReadScope,
-  [WS_METHODS.pluginPackagesEnable]: AuthOrchestrationOperateScope,
-  [WS_METHODS.pluginPackagesDisable]: AuthOrchestrationOperateScope,
-  [WS_METHODS.pluginPackagesReload]: AuthOrchestrationOperateScope,
+  // Enable and reload import and run local code with the server's full authority.
+  [WS_METHODS.pluginPackagesEnable]: AuthEnvironmentMaintainScope,
+  [WS_METHODS.pluginPackagesDisable]: AuthEnvironmentMaintainScope,
+  [WS_METHODS.pluginPackagesReload]: AuthEnvironmentMaintainScope,
   [WS_METHODS.subscribePluginCommands]: AuthOrchestrationReadScope,
   [WS_METHODS.serverRefreshProviders]: AuthOrchestrationReadScope,
   [WS_METHODS.serverUpdateProvider]: AuthProvidersManageScope,

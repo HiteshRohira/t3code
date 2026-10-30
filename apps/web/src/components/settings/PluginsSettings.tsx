@@ -1,5 +1,5 @@
 import {
-  AuthOrchestrationOperateScope,
+  AuthEnvironmentMaintainScope,
   type PluginPackageStatus,
   sessionGrantsScope,
 } from "@t3tools/contracts";
@@ -124,7 +124,7 @@ function PluginPackageRow({
 export function PluginsSettingsPanel() {
   const environmentId = usePrimaryEnvironmentId();
   const primarySession = usePrimarySessionState();
-  // The package RPCs require the orchestration operate grant, not the provider-management one.
+  // Enable, disable and reload require the environment maintain grant: they run local code.
   const operateAccess: ProviderOperateAccess =
     primarySession.error !== null
       ? "denied"
@@ -132,7 +132,7 @@ export function PluginsSettingsPanel() {
         ? primarySession.isPending
           ? "pending"
           : "denied"
-        : sessionGrantsScope(primarySession.data, AuthOrchestrationOperateScope)
+        : sessionGrantsScope(primarySession.data, AuthEnvironmentMaintainScope)
           ? "granted"
           : "denied";
   const readOnly = operateAccess !== "granted";

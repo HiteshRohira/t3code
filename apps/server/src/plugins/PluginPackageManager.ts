@@ -279,6 +279,18 @@ const make = Effect.fn("PluginPackageManager.make")(function* () {
         errors.push({ directory: entry, error: "manifest must define entrypoints.server" });
         continue;
       }
+      // Package loading does not resolve capabilities between packages yet, so declarations the
+      // runtime would otherwise enforce are rejected rather than silently ignored.
+      const unsupportedDeclarations = (["requires", "optional", "provides"] as const).filter(
+        (field) => (packageManifest[field]?.length ?? 0) > 0,
+      );
+      if (unsupportedDeclarations.length > 0) {
+        errors.push({
+          directory: entry,
+          error: `${unsupportedDeclarations.join(", ")} declarations are not supported yet`,
+        });
+        continue;
+      }
       if (discovered.has(packageManifest.id)) {
         errors.push({ directory: entry, error: `duplicate package id ${packageManifest.id}` });
         continue;
