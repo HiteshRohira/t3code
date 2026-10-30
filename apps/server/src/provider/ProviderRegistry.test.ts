@@ -280,6 +280,7 @@ function makeMutableServerSettingsService(
           return next;
         }),
       withSettingsSnapshot: (use) => Ref.get(settingsRef).pipe(Effect.flatMap(use)),
+      setEnabledPluginIds: () => Effect.die("Unexpected plugin enablement change"),
       get streamChanges() {
         return Stream.fromPubSub(changes);
       },
@@ -2172,6 +2173,7 @@ it.layer(
               )
             : settings.getSettings;
         }),
+        setEnabledPluginIds: () => Effect.die("Unexpected plugin enablement change"),
         streamChanges: Stream.empty,
         subscribeChanges: Effect.gen(function* () {
           const subscription = yield* PubSub.subscribe(changes);

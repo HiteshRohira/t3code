@@ -116,6 +116,8 @@ import * as ThreadManagement from "./orchestration-v2/ThreadManagementService.ts
 import * as ProjectStore from "./orchestration-v2/ProjectStore.ts";
 import * as OrchestrationEventStore from "./persistence/OrchestrationEventStore.ts";
 import * as SqlitePersistence from "./persistence/Sqlite.ts";
+import * as PluginCommandCatalog from "./plugins/PluginCommandCatalog.ts";
+import * as PluginPackageManager from "./plugins/PluginPackageManager.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ProjectEnrichment from "./project/ProjectEnrichmentService.ts";
 import * as ProjectService from "./project/ProjectService.ts";
@@ -542,6 +544,8 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ThreadLaunchService.ThreadLaunchService)({}),
   Layer.mock(ThreadManagement.ThreadManagementService)({}),
   Layer.mock(ThreadSearch.ThreadSearch)({}),
+  Layer.mock(PluginCommandCatalog.PluginCommandCatalog)({}),
+  Layer.mock(PluginPackageManager.PluginPackageManager)({}),
   Layer.mock(UsageService.UsageService)({}),
   Layer.mock(VcsProvisioningService.VcsProvisioningService)({}),
   Layer.mock(VcsStatusBroadcaster.VcsStatusBroadcaster)({}),

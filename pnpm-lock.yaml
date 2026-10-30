@@ -952,6 +952,9 @@ importers:
       '@t3tools/contracts':
         specifier: workspace:*
         version: link:../../packages/contracts
+      '@t3tools/plugin-runtime':
+        specifier: workspace:*
+        version: link:../../packages/plugin-runtime
       '@t3tools/provider-testing':
         specifier: workspace:*
         version: link:../../packages/provider-testing

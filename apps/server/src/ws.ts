@@ -111,6 +111,8 @@ import * as CheckpointDiffQuery from "./checkpointing/CheckpointDiffQuery.ts";
 import * as ServerConfig from "./config.ts";
 import * as EnvironmentTheme from "./environmentTheme.ts";
 import * as Keybindings from "./keybindings.ts";
+import * as PluginCommandCatalog from "./plugins/PluginCommandCatalog.ts";
+import * as PluginPackageManager from "./plugins/PluginPackageManager.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as ThreadManagementService from "./orchestration-v2/ThreadManagementService.ts";
 import * as CommandOutputHub from "./orchestration-v2/CommandOutputHub.ts";
@@ -1324,6 +1326,8 @@ export const layerWsRpc = (
       const providerLatestVersions = yield* ProviderLatestVersions.ProviderLatestVersions;
       const providerInstances = yield* ProviderInstanceRegistry.ProviderInstanceRegistry;
       const acpRegistryCatalog = yield* AcpRegistrySupport.AcpRegistryCatalog;
+      const pluginCommands = yield* PluginCommandCatalog.PluginCommandCatalog;
+      const pluginPackages = yield* PluginPackageManager.PluginPackageManager;
       const acpRegistryRuntimeCoordinator =
         yield* AcpRegistryRuntimeCoordinator.AcpRegistryRuntimeCoordinator;
       const providerMaintenanceRunner = yield* ProviderMaintenanceRunner.ProviderMaintenanceRunner;
@@ -2174,6 +2178,13 @@ export const layerWsRpc = (
         [WS_METHODS.serverProbe]: (_input) => Effect.succeed({}),
         [WS_METHODS.serverGetConfig]: (_input) =>
           loadServerConfig({ usageLimitsCommand: false, workspaceSnapshotsOnDemand: false }),
+        [WS_METHODS.pluginCommandsList]: (_input) => pluginCommands.list,
+        [WS_METHODS.pluginCommandsInvoke]: (input) => pluginCommands.invoke(input),
+        [WS_METHODS.pluginPackagesStatus]: (_input) => pluginPackages.status,
+        [WS_METHODS.pluginPackagesEnable]: (input) => pluginPackages.enable(input.id),
+        [WS_METHODS.pluginPackagesDisable]: (input) => pluginPackages.disable(input.id),
+        [WS_METHODS.pluginPackagesReload]: (input) => pluginPackages.reload(input.id),
+        [WS_METHODS.subscribePluginCommands]: (_input) => pluginCommands.changes,
         [WS_METHODS.serverSearchAcpRegistry]: (input) =>
           acpRegistryCatalog
             .search(input)
@@ -3267,6 +3278,8 @@ export const layer = Layer.unwrap(
     const peerLinks = yield* PeerLinks.PeerLinks;
     const peerLinkRequests = yield* PeerLinkRequests.PeerLinkRequests;
     const sql = yield* SqlClient.SqlClient;
+    const pluginCommands = yield* PluginCommandCatalog.PluginCommandCatalog;
+    const pluginPackages = yield* PluginPackageManager.PluginPackageManager;
     return HttpRouter.add(
       "GET",
       "/ws",
@@ -3347,6 +3360,13 @@ export const layer = Layer.unwrap(
               ),
               Layer.provide(Layer.succeed(PeerLinks.PeerLinks, peerLinks)),
               Layer.provide(Layer.succeed(PeerLinkRequests.PeerLinkRequests, peerLinkRequests)),
+              // Plugins are server-lifetime; every connection shares one catalog and package manager.
+              Layer.provide(
+                Layer.succeed(PluginCommandCatalog.PluginCommandCatalog, pluginCommands),
+              ),
+              Layer.provide(
+                Layer.succeed(PluginPackageManager.PluginPackageManager, pluginPackages),
+              ),
               Layer.provide(
                 SourceControlDiscovery.layer.pipe(
                   Layer.provide(

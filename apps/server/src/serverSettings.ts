@@ -5,6 +5,7 @@ import {
   ProjectScript,
   keepUnknownOverrideKeys,
   ProjectSettingsOverrides,
+  type PluginPackageId,
   type ProviderInstanceConfig,
   type ProviderInstanceMutation,
   defaultInstanceIdForDriver,
@@ -202,6 +203,11 @@ export class ServerSettingsService extends Context.Service<
       patch?: ServerSettingsPatch,
     ) => Effect.Effect<ServerSettings, ServerSettingsError>;
 
+    /** Replace the environment-scoped plugin enablement set. Not reachable through settings patches. */
+    readonly setEnabledPluginIds: (
+      ids: ReadonlyArray<PluginPackageId>,
+    ) => Effect.Effect<ServerSettings, ServerSettingsError>;
+
     readonly withSettingsSnapshot: <A, E, R>(
       use: (settings: ServerSettings) => Effect.Effect<A, E, R>,
     ) => Effect.Effect<A, E | ServerSettingsError, R>;
@@ -261,6 +267,10 @@ const makeTest = Effect.fn("serverSettings.makeTest")(function* (
           const patched = applyServerSettingsPatch(currentSettings, patch);
           return applyProviderInstanceMutation(patched, mutation);
         }),
+      ),
+    setEnabledPluginIds: (ids) =>
+      updateTestSettings((currentSettings) =>
+        Effect.succeed({ ...currentSettings, enabledPluginIds: [...ids] }),
       ),
     withSettingsSnapshot: (use) =>
       writeSemaphore.withPermits(1)(getSettings.pipe(Effect.flatMap(use))),
@@ -1194,6 +1204,10 @@ const make = Effect.gen(function* () {
           const patched = applyServerSettingsPatch(current, patch);
           return applyProviderInstanceMutation(patched, mutation);
         }),
+      ),
+    setEnabledPluginIds: (ids) =>
+      updateAndPersistSettings((current) =>
+        Effect.succeed({ ...current, enabledPluginIds: [...ids] }),
       ),
     withSettingsSnapshot,
     get streamChanges() {

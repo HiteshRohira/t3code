@@ -34,6 +34,8 @@ import {
 } from "./httpResponseErrorGuard.ts";
 import { fixPath } from "./os-jank.ts";
 import * as Ws from "./ws.ts";
+import * as PluginCommandCatalog from "./plugins/PluginCommandCatalog.ts";
+import * as PluginPackageManager from "./plugins/PluginPackageManager.ts";
 import * as AgentScopeLive from "./process/agentScope.ts";
 import * as ExternalLauncher from "./process/externalLauncher.ts";
 import * as NodePtyAdapter from "./terminal/NodePtyAdapter.ts";
@@ -770,6 +772,8 @@ const layerMakeRoutes = Layer.mergeAll(
     ),
   ),
   Layer.provide(PreviewAutomationBroker.layer),
+  // Server-lifetime plugin runtime: package discovery, enablement and the command catalog.
+  Layer.provide(PluginPackageManager.layer.pipe(Layer.provideMerge(PluginCommandCatalog.layer))),
   Layer.provide(ServerSelfUpdate.layer.pipe(Layer.provide(layerDesktopAppUpdate))),
   Layer.provide(layerCommandReadiness),
   Layer.provide(ServerHttp.layerBrowserApiCors),
