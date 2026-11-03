@@ -2184,6 +2184,7 @@ export const layerWsRpc = (
         [WS_METHODS.pluginPackagesEnable]: (input) => pluginPackages.enable(input.id),
         [WS_METHODS.pluginPackagesDisable]: (input) => pluginPackages.disable(input.id),
         [WS_METHODS.pluginPackagesReload]: (input) => pluginPackages.reload(input.id),
+        [WS_METHODS.pluginPackagesWebEntrypoints]: (_input) => pluginPackages.webEntrypoints,
         [WS_METHODS.subscribePluginCommands]: (_input) => pluginCommands.changes,
         [WS_METHODS.serverSearchAcpRegistry]: (input) =>
           acpRegistryCatalog

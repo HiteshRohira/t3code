@@ -8,6 +8,7 @@ import {
   type PluginPackageOperation,
   type PluginPackageStatus,
   type PluginPackageStatusSnapshot,
+  type PluginWebEntrypointList,
 } from "@t3tools/contracts";
 import type { PluginActivationContext, PluginDefinition } from "@t3tools/plugin-runtime";
 import {
@@ -179,6 +180,8 @@ export class PluginPackageManager extends Context.Service<
       PluginPackageStatusSnapshot,
       PluginPackageNotFoundError | PluginPackageOperationError
     >;
+    /** Experimental: web entrypoint modules of active packages. */
+    readonly webEntrypoints: Effect.Effect<PluginWebEntrypointList, PluginPackageOperationError>;
   }
 >()("t3/plugins/PluginPackageManager") {}
 
@@ -275,8 +278,14 @@ const make = Effect.fn("PluginPackageManager.make")(function* () {
         continue;
       }
       const packageManifest = decoded.value;
-      if (packageManifest.entrypoints.server === undefined) {
-        errors.push({ directory: entry, error: "manifest must define entrypoints.server" });
+      if (
+        packageManifest.entrypoints.server === undefined &&
+        packageManifest.entrypoints.web === undefined
+      ) {
+        errors.push({
+          directory: entry,
+          error: "manifest must define entrypoints.server or entrypoints.web",
+        });
         continue;
       }
       // Package loading does not resolve capabilities between packages yet, so declarations the
@@ -305,27 +314,32 @@ const make = Effect.fn("PluginPackageManager.make")(function* () {
     discovered: DiscoveredPackage,
     operation: PluginPackageOperation,
   ) {
-    const serverEntrypoint = discovered.manifest.entrypoints.server;
-    if (serverEntrypoint === undefined) {
+    const { server: serverEntrypoint, web: webEntrypoint } = discovered.manifest.entrypoints;
+    if (serverEntrypoint === undefined && webEntrypoint === undefined) {
       return yield* operationError(
         operation,
-        "manifest must define entrypoints.server",
+        "manifest must define entrypoints.server or entrypoints.web",
         discovered.manifest.id,
       );
     }
     yield* validatePackageTree(discovered, operation);
-    const sourceEntrypointPath = path.resolve(discovered.directory, serverEntrypoint);
-    const relativeEntrypoint = path.relative(discovered.directory, sourceEntrypointPath);
-    if (
-      relativeEntrypoint === ".." ||
-      relativeEntrypoint.startsWith(`..${path.sep}`) ||
-      path.isAbsolute(relativeEntrypoint)
-    ) {
-      return yield* operationError(
-        operation,
-        "entrypoint escapes the package directory",
-        discovered.manifest.id,
+    for (const entrypoint of [serverEntrypoint, webEntrypoint]) {
+      if (entrypoint === undefined) continue;
+      const relativeEntrypoint = path.relative(
+        discovered.directory,
+        path.resolve(discovered.directory, entrypoint),
       );
+      if (
+        relativeEntrypoint === ".." ||
+        relativeEntrypoint.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(relativeEntrypoint)
+      ) {
+        return yield* operationError(
+          operation,
+          "entrypoint escapes the package directory",
+          discovered.manifest.id,
+        );
+      }
     }
 
     const cacheDirectory = path.join(
@@ -345,10 +359,11 @@ const make = Effect.fn("PluginPackageManager.make")(function* () {
       yield* removeCacheDirectory(cacheDirectory);
       return yield* Effect.failCause(copied.cause);
     }
-    const entrypointPath = path.resolve(cacheDirectory, serverEntrypoint);
-
     const loaded = yield* Effect.exit(
       Effect.gen(function* () {
+        // Web-only packages have nothing to activate on the server.
+        if (serverEntrypoint === undefined) return (() => {}) as PluginPackageActivator;
+        const entrypointPath = path.resolve(cacheDirectory, serverEntrypoint);
         const moduleUrl = NodeURL.pathToFileURL(entrypointPath);
         const module = yield* Effect.tryPromise({
           try: () => import(/* @vite-ignore */ moduleUrl.href) as Promise<Record<string, unknown>>,
@@ -592,6 +607,28 @@ const make = Effect.fn("PluginPackageManager.make")(function* () {
     ),
   );
 
+  const webEntrypointsUnlocked = Effect.fn("PluginPackageManager.webEntrypoints")(function* () {
+    const entrypoints: Array<PluginWebEntrypointList["entrypoints"][number]> = [];
+    for (const [id, manifest] of [...activeManifests].sort(([left], [right]) =>
+      left.localeCompare(right),
+    )) {
+      const webEntrypoint = manifest.entrypoints.web;
+      const cacheDirectory = activeCacheDirectories.get(id);
+      if (webEntrypoint === undefined || cacheDirectory === undefined) continue;
+      const source = yield* fileSystem
+        .readFileString(path.resolve(cacheDirectory, webEntrypoint))
+        .pipe(Effect.mapError((error) => operationError("web", error, id)));
+      entrypoints.push({
+        id,
+        version: manifest.version,
+        generation: path.basename(cacheDirectory),
+        views: [...(manifest.contributes?.views ?? [])],
+        source,
+      });
+    }
+    return { entrypoints } satisfies PluginWebEntrypointList;
+  });
+
   yield* settings.start.pipe(Effect.mapError((error) => operationError("status", error)));
   yield* fileSystem
     .remove(pluginCacheDirectory, { recursive: true, force: true })
@@ -663,6 +700,7 @@ const make = Effect.fn("PluginPackageManager.make")(function* () {
     enable: (id: string) => semaphore.withPermits(1)(transition("enable", id)),
     disable: (id: string) => semaphore.withPermits(1)(disableUnlocked(id)),
     reload: (id: string) => semaphore.withPermits(1)(transition("reload", id)),
+    webEntrypoints: semaphore.withPermits(1)(webEntrypointsUnlocked()),
   } as const;
 });
 
@@ -673,6 +711,7 @@ const unavailableService = (error: PluginPackageOperationError) => {
     enable: Effect.fn("PluginPackageManager.enable")(() => unavailable),
     disable: Effect.fn("PluginPackageManager.disable")(() => unavailable),
     reload: Effect.fn("PluginPackageManager.reload")(() => unavailable),
+    webEntrypoints: unavailable,
   });
 };
 

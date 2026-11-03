@@ -68,6 +68,8 @@ export const RPC_REQUIRED_SCOPES = {
   [WS_METHODS.pluginPackagesEnable]: AuthEnvironmentMaintainScope,
   [WS_METHODS.pluginPackagesDisable]: AuthEnvironmentMaintainScope,
   [WS_METHODS.pluginPackagesReload]: AuthEnvironmentMaintainScope,
+  // Experimental: clients run these modules locally; reading them grants nothing beyond read.
+  [WS_METHODS.pluginPackagesWebEntrypoints]: AuthOrchestrationReadScope,
   [WS_METHODS.subscribePluginCommands]: AuthOrchestrationReadScope,
   [WS_METHODS.serverRefreshProviders]: AuthOrchestrationReadScope,
   [WS_METHODS.serverUpdateProvider]: AuthProvidersManageScope,

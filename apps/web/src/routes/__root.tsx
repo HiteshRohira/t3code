@@ -16,6 +16,7 @@ import { useEffect, useEffectEvent, useRef, useState } from "react";
 import { APP_DISPLAY_NAME, APP_VERSION } from "../branding";
 import { AppSidebarLayout } from "../components/AppSidebarLayout";
 import { CommandPalette } from "../components/CommandPalette";
+import { PluginWebHost } from "../plugins/PluginWebHost";
 import { CustomSnoozeDialogHost } from "../components/CustomSnoozeDialog";
 import { GuestShareDialogHost } from "../components/chat/GuestShareControls";
 import { AddProjectToMachineDialogHost } from "../components/AddProjectToMachineDialog";
@@ -184,6 +185,7 @@ function RootRouteBranch() {
 
   const appShell = (
     <CommandPalette>
+      <PluginWebHost />
       <AppSidebarLayout>
         <Outlet />
       </AppSidebarLayout>

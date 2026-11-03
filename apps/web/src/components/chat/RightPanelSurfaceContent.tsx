@@ -22,6 +22,7 @@ import { PullRequestDetailPanel } from "../pullRequest/PullRequestDetailPanel";
 import { PullRequestDetailGhost } from "../pullRequest/PullRequestGhosts";
 import { PullRequestsUnavailableState } from "../pullRequest/PullRequestsUnavailableState";
 import { ThreadPullRequestsPanel } from "../pullRequest/ThreadPullRequestsPanel";
+import { ExtensionPanelSurface } from "../../plugins/PluginWebHost";
 
 const PreviewPanel = lazy(() =>
   import("../preview/PreviewPanel").then((module) => ({ default: module.PreviewPanel })),
@@ -165,6 +166,15 @@ export function RightPanelSurfaceContent(props: {
     }
     case "pull-requests":
       return <ThreadPullRequestsPanel threadRef={threadRef} />;
+    case "extension":
+      return (
+        <ExtensionPanelSurface
+          key={`${scopedThreadKey(threadRef)}:${surface.id}`}
+          pluginId={surface.pluginId}
+          panelId={surface.panelId}
+          threadRef={threadRef}
+        />
+      );
     case "device":
       return (
         <Suspense fallback={null}>

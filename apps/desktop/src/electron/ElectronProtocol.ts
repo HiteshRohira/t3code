@@ -74,6 +74,8 @@ function makeDesktopContentSecurityPolicy(input: DesktopProtocolRegistrationInpu
     "'self'",
     "'unsafe-inline'",
     "'wasm-unsafe-eval'",
+    // Experimental: extension web entrypoints load as blob modules.
+    "blob:",
     ...(clerkOrigin ? [clerkOrigin] : []),
     "https://challenges.cloudflare.com",
   ];

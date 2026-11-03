@@ -1320,6 +1320,12 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.pluginPackagesStatus,
       staleTimeMs: 1_000,
     }),
+    // Experimental: web entrypoint modules of active plugin packages.
+    pluginWebEntrypoints: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:server:plugin-web-entrypoints",
+      tag: WS_METHODS.pluginPackagesWebEntrypoints,
+      staleTimeMs: 0,
+    }),
     resourceTelemetryHistory: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:server:resource-telemetry-history",
       tag: WS_METHODS.serverGetResourceTelemetryHistory,

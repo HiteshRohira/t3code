@@ -50,7 +50,29 @@ export const PluginPackageActionInput = Schema.Struct({
 });
 export type PluginPackageActionInput = typeof PluginPackageActionInput.Type;
 
-export const PluginPackageOperation = Schema.Literals(["status", "enable", "disable", "reload"]);
+// Experimental: web entrypoints of active packages. The module source is sent over RPC because
+// clients load it from a blob URL; packages are trusted local code.
+export const PluginWebEntrypoint = Schema.Struct({
+  id: PluginPackageId,
+  version: TrimmedNonEmptyString,
+  generation: Schema.String,
+  views: Schema.Array(PluginPackageId),
+  source: Schema.String.check(Schema.isMaxLength(2_000_000)),
+});
+export type PluginWebEntrypoint = typeof PluginWebEntrypoint.Type;
+
+export const PluginWebEntrypointList = Schema.Struct({
+  entrypoints: Schema.Array(PluginWebEntrypoint),
+});
+export type PluginWebEntrypointList = typeof PluginWebEntrypointList.Type;
+
+export const PluginPackageOperation = Schema.Literals([
+  "status",
+  "enable",
+  "disable",
+  "reload",
+  "web",
+]);
 export type PluginPackageOperation = typeof PluginPackageOperation.Type;
 
 export class PluginPackageNotFoundError extends Schema.TaggedError<PluginPackageNotFoundError>()(

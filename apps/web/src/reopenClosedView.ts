@@ -134,6 +134,10 @@ export async function reopenClosedView(
     case "pull-request":
       panels.openPullRequest(ref, surface);
       break;
+    case "extension":
+      // The view was closed, so toggling opens it.
+      panels.toggleExtensionPanel(ref, surface.pluginId, surface.panelId);
+      break;
     default:
       panels.open(ref, surface.kind);
   }

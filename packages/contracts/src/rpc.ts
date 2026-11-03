@@ -176,6 +176,7 @@ import {
   PluginPackageNotFoundError,
   PluginPackageOperationError,
   PluginPackageStatusSnapshot,
+  PluginWebEntrypointList,
 } from "./pluginPackages.ts";
 import {
   GuestShareCreateError,
@@ -550,6 +551,8 @@ export const WS_METHODS = {
   pluginPackagesEnable: "pluginPackages.enable",
   pluginPackagesDisable: "pluginPackages.disable",
   pluginPackagesReload: "pluginPackages.reload",
+  // Experimental: web entrypoints of active plugin packages
+  pluginPackagesWebEntrypoints: "pluginPackages.webEntrypoints",
   serverRefreshUsageRates: "server.refreshUsageRates",
 
   scheduledTasksSubscribe: "scheduledTasks.subscribe",
@@ -983,6 +986,12 @@ const WsPluginCommandsInvokeRpc = Rpc.make(WS_METHODS.pluginCommandsInvoke, {
 const WsPluginPackagesStatusRpc = Rpc.make(WS_METHODS.pluginPackagesStatus, {
   payload: Schema.Struct({}),
   success: PluginPackageStatusSnapshot,
+  error: Schema.Union([PluginPackageOperationError, EnvironmentAuthorizationError]),
+});
+
+const WsPluginPackagesWebEntrypointsRpc = Rpc.make(WS_METHODS.pluginPackagesWebEntrypoints, {
+  payload: Schema.Struct({}),
+  success: PluginWebEntrypointList,
   error: Schema.Union([PluginPackageOperationError, EnvironmentAuthorizationError]),
 });
 
@@ -2012,6 +2021,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsPluginPackagesEnableRpc,
   WsPluginPackagesDisableRpc,
   WsPluginPackagesReloadRpc,
+  WsPluginPackagesWebEntrypointsRpc,
   WsServerRefreshProvidersRpc,
   WsServerUpdateProviderRpc,
   WsProviderConsumeResetCreditRpc,

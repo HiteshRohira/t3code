@@ -74,7 +74,17 @@ export type RightPanelSurface =
       url?: string;
       detailTab?: PullRequestDetailTab;
     }
-  | { id: "pull-requests"; kind: "pull-requests" };
+  | { id: "pull-requests"; kind: "pull-requests" }
+  | {
+      /** Experimental: a panel contributed by an extension's web entrypoint. */
+      id: `extension:${string}`;
+      kind: "extension";
+      pluginId: string;
+      panelId: string;
+    };
+
+const extensionPanelSurfaceId = (pluginId: string, panelId: string) =>
+  `extension:${pluginId}/${panelId}` as const;
 
 const RIGHT_PANEL_STORAGE_KEY = "t3code:right-panel-state:v2";
 const RIGHT_PANEL_STORAGE_VERSION = 14;
@@ -181,6 +191,8 @@ interface RightPanelStoreState {
     ref: ScopedThreadRef,
     kind: Exclude<RightPanelKind, "file" | "terminal" | "pull-request">,
   ) => void;
+  /** Experimental: opens an extension panel, or hides the panel when that tab is already showing. */
+  toggleExtensionPanel: (ref: ScopedThreadRef, pluginId: string, panelId: string) => void;
   setThreadPanelOpen: (
     ref: ScopedThreadRef,
     presentation: ThreadPanelPresentation,
@@ -1053,6 +1065,16 @@ export const useRightPanelStore = create<RightPanelStoreState>()(
             return upsertSurface(current, singletonSurface(kind));
           }),
         ),
+      toggleExtensionPanel: (ref, pluginId, panelId) =>
+        set((state) =>
+          userAction(state, scopedThreadKey(ref), (current) => {
+            const id = extensionPanelSurfaceId(pluginId, panelId);
+            if (current.isOpen && current.activeSurfaceId === id) {
+              return { ...current, isOpen: false };
+            }
+            return upsertSurface(current, { id, kind: "extension", pluginId, panelId });
+          }),
+        ),
       setThreadPanelOpen: (ref, presentation, open) =>
         set((state) => ({
           threadPanelVisibilityByThreadKey: updateThreadPanelVisibilityMap(
@@ -1179,7 +1201,7 @@ export function selectThreadPanelOpen(
 export function selectActiveRightPanel(
   byThreadKey: Record<string, ThreadRightPanelState>,
   ref: ScopedThreadRef | null | undefined,
-): RightPanelKind | null {
+): RightPanelSurface["kind"] | null {
   const state = selectThreadRightPanelState(byThreadKey, ref);
   if (!state.isOpen) return null;
   return state.surfaces.find((surface) => surface.id === state.activeSurfaceId)?.kind ?? null;

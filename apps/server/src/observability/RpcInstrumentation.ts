@@ -39,6 +39,7 @@ const RPC_AGGREGATES = {
   [WS_METHODS.pluginPackagesEnable]: "pluginPackages",
   [WS_METHODS.pluginPackagesDisable]: "pluginPackages",
   [WS_METHODS.pluginPackagesReload]: "pluginPackages",
+  [WS_METHODS.pluginPackagesWebEntrypoints]: "pluginPackages",
   [WS_METHODS.serverRefreshProviders]: "server",
   [WS_METHODS.serverUpdateProvider]: "server",
   [WS_METHODS.providerAuthStart]: "provider",

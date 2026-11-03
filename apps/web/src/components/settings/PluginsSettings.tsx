@@ -18,6 +18,7 @@ import { useState } from "react";
 
 import { usePrimarySessionState } from "../../environments/primary";
 import { usePrimaryEnvironmentId } from "../../state/environments";
+import { refreshPluginWebEntrypoints } from "../../plugins/PluginWebHost";
 import { useEnvironmentQuery } from "../../state/query";
 import { serverEnvironment } from "../../state/server";
 import { useAtomCommand } from "../../state/use-atom-command";
@@ -169,6 +170,7 @@ export function PluginsSettingsPanel() {
       setPending(null);
       if (result._tag === "Success") {
         status.refresh();
+        refreshPluginWebEntrypoints();
         return;
       }
       if (!isAtomCommandInterrupted(result)) {

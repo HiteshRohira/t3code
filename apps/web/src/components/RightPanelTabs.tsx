@@ -1,4 +1,5 @@
 import { sourceControlClients } from "@t3tools/client-runtime/source-control-clients";
+import { pluginPanelKey, usePluginPanelStore } from "../plugins/pluginWebRegistry";
 import type { EnvironmentThreadShell } from "@t3tools/client-runtime/state/shell";
 import { useProjects, useServerConfigs, useThreadShells } from "~/state/entities";
 import {
@@ -34,6 +35,7 @@ import {
   Files,
   Globe2,
   Plus,
+  PuzzleIcon,
   TerminalSquare,
 } from "lucide-react";
 import { Volume2, VolumeOff } from "lucide";
@@ -557,6 +559,11 @@ function surfaceTitle(
       return "Pull requests";
     case "device":
       return surface.title ?? surface.target?.name ?? "Device";
+    case "extension":
+      return (
+        usePluginPanelStore.getState().panels[pluginPanelKey(surface.pluginId, surface.panelId)]
+          ?.title ?? "Extension"
+      );
     case "preview": {
       const snapshot = surface.resourceId ? sessions[surface.resourceId] : null;
       if (!snapshot || snapshot.navStatus._tag === "Idle") return "Browser";
@@ -645,6 +652,8 @@ function SurfaceIcon({
       );
     case "pull-requests":
       return <PullRequestGlyph.link className="size-3 shrink-0" />;
+    case "extension":
+      return <PuzzleIcon className="size-3 shrink-0" />;
     case "device":
       return surface.target?.platform === "ios" ? (
         <AppleIcon className="size-3 shrink-0" />
@@ -942,6 +951,8 @@ function RightPanelTab(
 }
 
 export function RightPanelTabs(props: RightPanelTabsProps) {
+  // Extension panel titles come from their packages; re-render when those load.
+  usePluginPanelStore((state) => state.panels);
   const focusedSurface = props.surfaces.find((surface) => surface.id === props.activeSurfaceId);
   const ownsDesktopTitleBar = isElectron && props.mode === "inline";
   const browserProfiles = useBrowserDefaults().profiles;

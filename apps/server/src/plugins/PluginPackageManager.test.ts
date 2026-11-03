@@ -536,6 +536,52 @@ it.layer(NodeServices.layer)("plugin package lifecycle", (it) => {
     }),
   );
 
+  it.effect("activates a web-only package and serves its web entrypoint", () =>
+    Effect.gen(function* () {
+      const fileSystem = yield* FileSystem.FileSystem;
+      const baseDir = yield* fileSystem.makeTempDirectoryScoped({
+        prefix: "t3code-plugin-package-web-test-",
+      });
+      const webId = "com.acme.notes";
+      const directory = `${baseDir}/userdata/plugins/notes`;
+      const webSource = "export default function activate(api) {}\n";
+      yield* fileSystem.makeDirectory(directory, { recursive: true });
+      yield* fileSystem.writeFileString(
+        `${directory}/t3-plugin.json`,
+        encodeManifest({
+          manifestVersion: 1,
+          id: webId,
+          version: "0.1.0",
+          apiVersion: 1,
+          entrypoints: { web: "./web.mjs" },
+          capabilities: [],
+          contributes: { views: ["com.acme.notes.panel"] },
+        }),
+      );
+      yield* fileSystem.writeFileString(`${directory}/web.mjs`, webSource);
+
+      yield* useEnvironment(
+        baseDir,
+        Effect.gen(function* () {
+          const manager = yield* PluginPackageManager.PluginPackageManager;
+          expect((yield* manager.webEntrypoints).entrypoints).toEqual([]);
+          const enabled = yield* manager.enable(webId);
+          expect(enabled.packages).toMatchObject([{ id: webId, state: "active" }]);
+          const { entrypoints } = yield* manager.webEntrypoints;
+          expect(entrypoints).toMatchObject([
+            { id: webId, version: "0.1.0", views: ["com.acme.notes.panel"], source: webSource },
+          ]);
+          const firstGeneration = entrypoints[0]?.generation;
+          yield* manager.reload(webId);
+          const reloaded = yield* manager.webEntrypoints;
+          expect(reloaded.entrypoints[0]?.generation).not.toBe(firstGeneration);
+          yield* manager.disable(webId);
+          expect((yield* manager.webEntrypoints).entrypoints).toEqual([]);
+        }),
+      );
+    }),
+  );
+
   it.effect("reports cleanup failures after disabling the committed package", () =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
