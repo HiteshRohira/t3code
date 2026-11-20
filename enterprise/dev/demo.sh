@@ -12,7 +12,7 @@ DIR=$(cd "$DIR" && pwd)
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
 
 if [ "${2:-}" = "stop" ]; then
-  for name in gateway control-plane mock; do
+  for name in gateway control-plane mock mock-openai; do
     if [ -f "$DIR/$name.pid" ]; then
       kill "$(cat "$DIR/$name.pid")" 2>/dev/null || true
       rm -f "$DIR/$name.pid"
@@ -41,11 +41,17 @@ cat >"$DIR/gw/gateway.json" <<EOF
   "controlPlaneUrl": "https://localhost:8443",
   "controlPlaneCaPath": "$DIR/cp/data/ca.crt",
   "syncIntervalSeconds": 5,
-  "upstreams": [{ "family": "anthropic", "baseUrl": "http://127.0.0.1:8790", "apiKeyEnv": "DEMO_ANTHROPIC_KEY" }]
+  "upstreams": [
+    { "family": "anthropic", "baseUrl": "http://127.0.0.1:8790", "apiKeyEnv": "DEMO_ANTHROPIC_KEY" },
+    { "family": "openai", "baseUrl": "http://127.0.0.1:8792", "apiKeyEnv": "DEMO_OPENAI_KEY" }
+  ]
 }
 EOF
 
 export DEMO_ANTHROPIC_KEY=sk-demo-org-key-held-by-gateway
+export DEMO_OPENAI_KEY=sk-demo-openai-org-key-held-by-gateway
+node "$ROOT/enterprise/dev/mock-openai.mjs" 8792 "$DIR/mock-openai.log" >"$DIR/mock-openai.out" 2>&1 &
+echo $! >"$DIR/mock-openai.pid"
 node "$ROOT/enterprise/dev/mock-anthropic.mjs" 8790 "$DIR/mock-anthropic.log" >"$DIR/mock.out" 2>&1 &
 echo $! >"$DIR/mock.pid"
 node "$CP" serve --config "$DIR/cp/control-plane.json" >"$DIR/control-plane.out" 2>&1 &
@@ -61,7 +67,7 @@ echo $! >"$DIR/gateway.pid"
 
 curl -sf --cacert "$DIR/cp/data/ca.crt" -X PUT https://localhost:8443/v1/admin/policy \
   -H "authorization: Bearer $T3E_ADMIN_API_TOKEN" -H 'content-type: application/json' \
-  -d '{"document":{"schemaVersion":1,"organization":"Example Corp","limits":{"connect":false,"telemetry":false,"maxRuntimeMode":"auto-accept-edits","providers":{"allowedDrivers":["claudeAgent"]}}}}' >/dev/null
+  -d '{"document":{"schemaVersion":1,"organization":"Example Corp","limits":{"connect":false,"telemetry":false,"pairing":"sso","agentPullRequests":"draft","maxRuntimeMode":"auto-accept-edits","providers":{"allowedDrivers":["claudeAgent","codex"]}}}}' >/dev/null
 
 node "$CP" trust --config "$DIR/cp/control-plane.json" >"$DIR/trust.json"
 node -e '
@@ -74,14 +80,14 @@ fs.writeFileSync(process.argv[2], JSON.stringify({
   gatewayUrl: "https://localhost:9443",
   policyKeys: trust.policyKeys,
   serverCaPem: trust.caPem,
-  bootstrapPolicy: { schemaVersion: 1, organization: trust.organization, limits: { connect: false, maxRuntimeMode: "approval-required", providers: { allowedDrivers: ["claudeAgent"] } } },
+  bootstrapPolicy: { schemaVersion: 1, organization: trust.organization, limits: { connect: false, maxRuntimeMode: "approval-required", providers: { allowedDrivers: ["claudeAgent", "codex"] } } },
   policyRefreshSeconds: 60,
 }, null, 2) + "\n");
 ' "$DIR/trust.json" "$DIR/enterprise.json"
 
 cat <<EOF
 Running: control plane https://localhost:8443 (admin: /admin), gateway https://localhost:9443,
-mock Anthropic on 127.0.0.1:8790. Logs and state are in $DIR.
+mock Anthropic on 127.0.0.1:8790, mock OpenAI on 127.0.0.1:8792. Logs and state are in $DIR.
 
 Point a T3 dev server at it:
   export T3CODE_DEV_ENTERPRISE_CONFIG_PATH=$DIR/enterprise.json
