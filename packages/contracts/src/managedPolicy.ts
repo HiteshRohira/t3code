@@ -70,6 +70,9 @@ export type ManagedPolicyClient = typeof ManagedPolicyClient.Type;
  * Restrictions that are not settings: users cannot opt out of them anywhere. For the boolean
  * capabilities, omitted means allowed and only `false` restricts.
  */
+export const ManagedPolicyPairing = Schema.Literals(["links", "sso"]);
+export type ManagedPolicyPairing = typeof ManagedPolicyPairing.Type;
+
 export const ManagedPolicyLimits = Schema.Struct({
   /** The broadest runtime mode any thread may be created in, switched to, or run turns in. */
   maxRuntimeMode: Schema.optionalKey(RuntimeMode),
@@ -77,6 +80,11 @@ export const ManagedPolicyLimits = Schema.Struct({
   clients: Schema.optionalKey(Schema.NonEmptyArray(ManagedPolicyClient)),
   /** `false` turns T3 Connect off and unlinks this machine. */
   connect: Schema.optionalKey(Schema.Boolean),
+  /**
+   * `sso`: devices pair only after their user signs in to the organization as this environment's
+   * owner (enterprise builds); plain pairing links are refused. `links` (the default) allows both.
+   */
+  pairing: Schema.optionalKey(ManagedPolicyPairing),
   webhookTasks: Schema.optionalKey(Schema.Boolean),
   /** Can only turn product analytics off, never force it on. */
   telemetry: Schema.optionalKey(Schema.Boolean),
@@ -92,6 +100,7 @@ export const ManagedPolicySummaryLimits = Schema.Struct({
   clients: Schema.optionalKey(Schema.NonEmptyArray(ManagedPolicyClient)),
   /** `false` also when `clients` leaves out `remote`, since Connect is remote access. */
   connect: Schema.optionalKey(Schema.Boolean),
+  pairing: Schema.optionalKey(ManagedPolicyPairing),
   webhookTasks: Schema.optionalKey(Schema.Boolean),
   telemetry: Schema.optionalKey(Schema.Boolean),
   browserCookieImport: Schema.optionalKey(Schema.Boolean),

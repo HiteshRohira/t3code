@@ -58,6 +58,8 @@ import { authEnvironment } from "~/state/auth";
 import { readEnvironmentScope } from "~/state/session";
 import { useManagedPolicy, usePrimaryManagedPolicy } from "~/state/managedPolicy";
 import { useAtomCommand } from "~/state/use-atom-command";
+import { useEnvironmentHttpBaseUrl } from "~/state/environments";
+import { ensureLocalApi } from "~/localApi";
 import { ManagedControl } from "../ManagedPolicy";
 import { ConnectionStatusDot } from "../ConnectionStatusDot";
 import { ITEM_ROW_CLASSNAME, ITEM_ROW_INNER_CLASSNAME } from "./itemRows";
@@ -589,7 +591,11 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
   onRevokeOtherClients,
   delegatableScopes,
 }: AuthorizedClientsHeaderActionProps) {
-  const pairingDenial = managedCapabilityDenial(useManagedPolicy(environmentId), "remoteClients");
+  const managedPolicy = useManagedPolicy(environmentId);
+  const pairingDenial = managedCapabilityDenial(managedPolicy, "remoteClients");
+  // The organization requires its sign-in to pair; the server refuses plain links.
+  const ssoPairing = managedPolicy?.limits?.pairing === "sso";
+  const httpBaseUrl = useEnvironmentHttpBaseUrl(environmentId);
   const createPairingCredential = useAtomCommand(authEnvironment.createPairingCredential, {
     reportFailure: false,
   });
@@ -649,6 +655,31 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
       >
         {isRevokingOtherClients ? "Revoking…" : "Revoke others"}
       </Button>
+      {pairingDenial === undefined && ssoPairing ? (
+        <Tooltip>
+          <TooltipTrigger
+            render={
+              <Button
+                size="xs"
+                variant="default"
+                disabled={httpBaseUrl === null}
+                onClick={() =>
+                  void ensureLocalApi().shell.openExternal(
+                    new URL("/api/enterprise/pair/start?client=link", httpBaseUrl!).toString(),
+                  )
+                }
+              />
+            }
+          >
+            <PlusIcon className="size-3" />
+            Pair with sign-in
+          </TooltipTrigger>
+          <TooltipPopup side="top">
+            {managedPolicy?.organization} requires you to sign in to pair a device. Opens your
+            browser; the link it shows works once.
+          </TooltipPopup>
+        </Tooltip>
+      ) : null}
       {pairingDenial !== undefined ? (
         <ManagedControl reason={pairingDenial}>
           <Button size="xs" variant="default" disabled>
@@ -658,7 +689,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
         </ManagedControl>
       ) : null}
       <Dialog
-        open={dialogOpen && pairingDenial === undefined}
+        open={dialogOpen && pairingDenial === undefined && !ssoPairing}
         onOpenChange={(open) => {
           setDialogOpen(open);
           if (!open) {
@@ -669,7 +700,7 @@ export const AuthorizedClientsHeaderAction = memo(function AuthorizedClientsHead
           }
         }}
       >
-        {pairingDenial === undefined ? (
+        {pairingDenial === undefined && !ssoPairing ? (
           <DialogTrigger
             render={
               <Button size="xs" variant="default">

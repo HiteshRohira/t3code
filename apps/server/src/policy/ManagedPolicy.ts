@@ -134,6 +134,7 @@ function summarizeLimits(
   const {
     maxRuntimeMode,
     clients,
+    pairing,
     webhookTasks,
     telemetry,
     browserCookieImport,
@@ -145,6 +146,7 @@ function summarizeLimits(
     ...(maxRuntimeMode === undefined ? {} : { maxRuntimeMode }),
     ...(clients === undefined ? {} : { clients }),
     ...(connect ? {} : { connect: false }),
+    ...(pairing === undefined ? {} : { pairing }),
     ...(webhookTasks === undefined ? {} : { webhookTasks }),
     ...(telemetry === undefined ? {} : { telemetry }),
     ...(browserCookieImport === undefined ? {} : { browserCookieImport }),

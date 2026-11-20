@@ -70,6 +70,28 @@ it.layer(Layer.mergeAll(NodeServices.layer, NodeCrypto.layer))(
       }).pipe(Effect.provide(layerEnvironmentAuth(undefined, desktopAndLocalOnly))),
     );
 
+    it.effect("under SSO pairing, issues links only for an organization sign-in", () =>
+      Effect.gen(function* () {
+        const environmentAuth = yield* EnvironmentAuth.EnvironmentAuth;
+
+        const refused = yield* environmentAuth.issuePairingCredential().pipe(Effect.flip);
+        const verified = yield* environmentAuth.createPairingLink({ ssoVerified: true });
+        const startup = yield* environmentAuth.issueStartupPairingCredential();
+
+        assert.include(refused.message, "does not allow pairing links");
+        assert.isAbove(verified.credential.length, 0);
+        assert.isAbove(startup.credential.length, 0);
+      }).pipe(
+        Effect.provide(
+          layerEnvironmentAuth(undefined, {
+            schemaVersion: 1,
+            organization: "Example Corp",
+            limits: { pairing: "sso" },
+          }),
+        ),
+      ),
+    );
+
     it.effect("revokes link-paired clients on startup under a policy without remote clients", () =>
       Effect.gen(function* () {
         const sessions = yield* SessionStore.SessionStore;

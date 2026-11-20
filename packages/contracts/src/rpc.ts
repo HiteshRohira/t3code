@@ -351,6 +351,7 @@ import {
   ProviderConsumeResetCreditInput,
   ProviderConsumeResetCreditResult,
 } from "./providerUsageLimits.ts";
+import { EnterpriseActionError, EnterpriseEnrollResult, EnterpriseStatus } from "./enterprise.ts";
 import { UsagePricing, UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
 import {
   StorageCleanupReport,
@@ -448,6 +449,9 @@ export const WS_METHODS = {
   providerInstallCancel: "provider.install.cancel",
   providerInstallSubscribe: "provider.install.subscribe",
   providerInstallRemove: "provider.install.remove",
+  enterpriseSubscribeStatus: "enterprise.subscribeStatus",
+  enterpriseRestart: "enterprise.restart",
+  enterpriseEnroll: "enterprise.enroll",
 
   vcsPull: "vcs.pull",
   vcsRefreshStatus: "vcs.refreshStatus",
@@ -745,6 +749,24 @@ const WsProviderInstallSubscribeRpc = Rpc.make(WS_METHODS.providerInstallSubscri
   success: ProviderInstallState,
   error: ProviderSetupRpcError,
   stream: true,
+});
+
+const WsEnterpriseSubscribeStatusRpc = Rpc.make(WS_METHODS.enterpriseSubscribeStatus, {
+  payload: Schema.Struct({}),
+  success: Schema.NullOr(EnterpriseStatus),
+  error: EnvironmentAuthorizationError,
+  stream: true,
+});
+
+const WsEnterpriseRestartRpc = Rpc.make(WS_METHODS.enterpriseRestart, {
+  payload: Schema.Struct({}),
+  error: Schema.Union([EnterpriseActionError, EnvironmentAuthorizationError]),
+});
+
+const WsEnterpriseEnrollRpc = Rpc.make(WS_METHODS.enterpriseEnroll, {
+  payload: Schema.Struct({}),
+  success: EnterpriseEnrollResult,
+  error: Schema.Union([EnterpriseActionError, EnvironmentAuthorizationError]),
 });
 
 const WsProviderInstallRemoveRpc = Rpc.make(WS_METHODS.providerInstallRemove, {
@@ -1994,6 +2016,9 @@ export class RpcScopeAuthorization extends RpcMiddleware.Service<RpcScopeAuthori
 ) {}
 
 export const WsRpcGroup = RpcGroup.make(
+  WsEnterpriseSubscribeStatusRpc,
+  WsEnterpriseRestartRpc,
+  WsEnterpriseEnrollRpc,
   WsGuestShareCreateRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,

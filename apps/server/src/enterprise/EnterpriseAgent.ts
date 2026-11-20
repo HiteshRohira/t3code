@@ -5,6 +5,7 @@
  *
  * @module EnterpriseAgent
  */
+import { EnterpriseActionError, type EnterpriseStatus } from "@t3tools/contracts";
 import type { AuditEvent, LeaseResponse } from "@t3tools/enterprise-protocol/wire";
 import { paths as wirePaths } from "@t3tools/enterprise-protocol/wire";
 import * as HostProcess from "@t3tools/shared/HostProcess";
@@ -13,14 +14,23 @@ import * as Context from "effect/Context";
 import * as DateTime from "effect/DateTime";
 import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
+import * as FileSystem from "effect/FileSystem";
 import * as Layer from "effect/Layer";
+import * as Path from "effect/Path";
+import * as Scope from "effect/Scope";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
+import * as Stream from "effect/Stream";
+import * as SubscriptionRef from "effect/SubscriptionRef";
+import * as Deferred from "effect/Deferred";
 
 import * as EnterpriseConfig from "./EnterpriseConfig.ts";
 import * as EnterpriseDevice from "./EnterpriseDevice.ts";
+import * as EnterpriseEnrollment from "./EnterpriseEnrollment.ts";
 import * as EnterprisePolicy from "./EnterprisePolicy.ts";
 import * as Transport from "./enterpriseTransport.ts";
+import * as ServerConfig from "../config.ts";
+import packageJson from "../../package.json" with { type: "json" };
 
 export class EnterpriseRequestError extends Schema.TaggedError<EnterpriseRequestError>()(
   "EnterpriseRequestError",
@@ -31,34 +41,18 @@ export class EnterpriseRequestError extends Schema.TaggedError<EnterpriseRequest
   }
 }
 
-export interface EnterpriseStatus {
-  readonly organization: string;
-  readonly controlPlaneUrl: string;
-  readonly gatewayUrl: string;
-  readonly enrolled: boolean;
-  readonly email: string | null;
-  readonly deviceId: string | null;
-  readonly certificateExpiresAt: string | null;
-  readonly lease: {
-    readonly active: boolean;
-    readonly expiresAt: string | null;
-    readonly problem: string | null;
-  };
-  readonly policy: {
-    readonly loadedVersion: number | null;
-    readonly availableVersion: number | null;
-    readonly restartRequired: boolean;
-  };
-  readonly whenUnreachable: "use-cached-until-expiry" | "deny";
-  readonly updatedAt: string;
-}
-
 export class EnterpriseAgent extends Context.Service<
   EnterpriseAgent,
   {
     /** Undefined on a machine without an enterprise config. */
     readonly config: EnterpriseConfig.LoadedEnterpriseConfig | undefined;
     readonly status: Effect.Effect<EnterpriseStatus | undefined>;
+    /** The current status, then every change. */
+    readonly statusChanges: Stream.Stream<EnterpriseStatus | null>;
+    /** Exits so the supervising desktop app starts the server again with the new policy. */
+    readonly restart: Effect.Effect<void, EnterpriseActionError>;
+    /** Starts enrollment and returns the sign-in link; status reports how it ends. */
+    readonly enroll: Effect.Effect<{ readonly signInUrl: string }, EnterpriseActionError>;
     /** Sends audit events; fails while the device cannot reach the control plane. */
     readonly sendAudit: (
       events: ReadonlyArray<AuditEvent>,
@@ -102,9 +96,16 @@ const BYPASS_VARIABLES = [
   "OPENAI_ORG_ID",
 ];
 
+const notManaged = new EnterpriseActionError({
+  message: "This computer is not managed by an organization.",
+});
+
 const unmanaged = EnterpriseAgent.of({
   config: undefined,
   status: Effect.undefined,
+  statusChanges: Stream.make(null),
+  restart: Effect.fail(notManaged),
+  enroll: Effect.fail(notManaged),
   sendAudit: Effect.fn("EnterpriseAgent.sendAudit.unmanaged")(function* () {
     return yield* Effect.succeed(false);
   }),
@@ -128,7 +129,17 @@ const make = Effect.gen(function* () {
     lease: { token: string; expiresAt: number } | undefined;
     problem: string | null;
     availableVersion: number | null;
-  } = { identity: undefined, lease: undefined, problem: null, availableVersion: null };
+    enrollment: { signInUrl: string; error: string | null } | null;
+  } = {
+    identity: undefined,
+    lease: undefined,
+    problem: null,
+    availableVersion: null,
+    enrollment: null,
+  };
+  const serverMode = (yield* ServerConfig.ServerConfig).mode;
+  // Only the desktop app supervises its server and starts it again after it exits.
+  const restartMode = serverMode === "desktop" ? ("self" as const) : ("manual" as const);
 
   const credentials = (): Transport.ProxyCredentials => {
     if (state.identity === undefined) {
@@ -180,6 +191,7 @@ const make = Effect.gen(function* () {
       organization: config.organization,
       controlPlaneUrl: config.controlPlaneUrl,
       gatewayUrl: config.gatewayUrl,
+      supportUrl: config.supportUrl ?? null,
       enrolled: state.identity !== undefined,
       email: state.identity?.record.email ?? null,
       deviceId: state.identity?.record.deviceId ?? null,
@@ -198,16 +210,29 @@ const make = Effect.gen(function* () {
         restartRequired:
           state.availableVersion !== null && state.availableVersion !== loadedPolicy.version,
       },
+      restart: restartMode,
+      enrollment: state.enrollment,
       whenUnreachable,
       updatedAt: DateTime.formatIso(DateTime.makeUnsafe(now)),
     } satisfies EnterpriseStatus;
   });
 
+  const current = yield* SubscriptionRef.make<EnterpriseStatus>(yield* status);
+  // Clients compare whole snapshots, so a tick that changed nothing but the clock is not sent.
+  const publish = Effect.flatMap(status, (snapshot) =>
+    SubscriptionRef.update(current, (previous) =>
+      JSON.stringify({ ...previous, updatedAt: "" }) ===
+      JSON.stringify({ ...snapshot, updatedAt: "" })
+        ? previous
+        : snapshot,
+    ),
+  );
   const writeStatus = status.pipe(
     Effect.flatMap((snapshot) =>
       EnterpriseDevice.writeTextAtomically(paths.status, `${JSON.stringify(snapshot, null, 2)}\n`),
     ),
     Effect.ignore,
+    Effect.andThen(publish),
   );
 
   const deviceCall = Effect.fn("EnterpriseAgent.deviceCall")(function* (
@@ -312,7 +337,67 @@ const make = Effect.gen(function* () {
     return true;
   });
 
-  return EnterpriseAgent.of({ config: loaded, status, sendAudit });
+  const restart = Effect.gen(function* () {
+    if (restartMode === "manual") {
+      return yield* new EnterpriseActionError({
+        message: "Restart T3 Code where it runs to apply the new policy.",
+      });
+    }
+    yield* Effect.logInfo("Restarting to apply the organization's policy.");
+    // The desktop app starts its server again whenever it exits; SIGTERM runs every finalizer.
+    yield* Effect.sync(() => process.kill(process.pid, "SIGTERM")).pipe(
+      Effect.delay(Duration.millis(250)),
+      Effect.forkDetach,
+    );
+  }).pipe(Effect.withSpan("EnterpriseAgent.restart"));
+
+  const enrollmentRunning = yield* SubscriptionRef.make(false);
+  const enrollContext = yield* Effect.context<FileSystem.FileSystem | Path.Path>();
+  const scope = yield* Scope.Scope;
+  const enroll = Effect.gen(function* () {
+    if (yield* SubscriptionRef.getAndSet(enrollmentRunning, true)) {
+      if (state.enrollment !== null) return { signInUrl: state.enrollment.signInUrl };
+    }
+    const signInUrl = yield* Deferred.make<string>();
+    yield* EnterpriseEnrollment.enroll(config, {
+      clientVersion: packageJson.version,
+      showSignInUrl: (url) =>
+        Effect.sync(() => {
+          state.enrollment = { signInUrl: url, error: null };
+        }).pipe(Effect.andThen(publish), Effect.andThen(Deferred.succeed(signInUrl, url))),
+    }).pipe(
+      Effect.tap(() =>
+        Effect.sync(() => {
+          state.enrollment = null;
+        }),
+      ),
+      Effect.andThen(renewLease),
+      Effect.andThen(refreshPolicy),
+      Effect.catch((error) =>
+        Effect.sync(() => {
+          state.enrollment = {
+            signInUrl: state.enrollment?.signInUrl ?? "",
+            error: error.message,
+          };
+        }),
+      ),
+      Effect.ensuring(
+        SubscriptionRef.set(enrollmentRunning, false).pipe(Effect.andThen(writeStatus)),
+      ),
+      Effect.provide(enrollContext),
+      Effect.forkIn(scope),
+    );
+    return { signInUrl: yield* Deferred.await(signInUrl) };
+  }).pipe(Effect.withSpan("EnterpriseAgent.enroll"));
+
+  return EnterpriseAgent.of({
+    config: loaded,
+    status,
+    statusChanges: SubscriptionRef.changes(current),
+    restart,
+    enroll,
+    sendAudit,
+  });
 });
 
 export const layer = Layer.effect(EnterpriseAgent, make);

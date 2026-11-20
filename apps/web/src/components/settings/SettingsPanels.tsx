@@ -1,4 +1,5 @@
 import { useAtomValue } from "@effect/atom-react";
+import { OrganizationSettingsSection } from "./OrganizationSettings";
 import { NotificationSettings } from "./NotificationSettings";
 import { PRIVACY_POLICY_URL } from "../../legalLinks";
 import { CheckIcon } from "lucide-react";
@@ -791,6 +792,7 @@ export function GeneralSettingsPanel() {
 
   return (
     <SettingsPageContainer>
+      <OrganizationSettingsSection />
       <SettingsSection id="notifications" title="Notifications">
         <NotificationSettings />
         <SettingsRow

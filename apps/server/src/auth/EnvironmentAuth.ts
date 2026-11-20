@@ -488,6 +488,8 @@ export class EnvironmentAuth extends Context.Service<
       readonly subject?: string;
       readonly proofKeyThumbprint?: string;
       readonly purpose?: "startup";
+      /** The organization's sign-in vouched for this pairing, which `limits.pairing: sso` needs. */
+      readonly ssoVerified?: boolean;
     }) => Effect.Effect<
       IssuedPairingLink,
       ServerAuthInternalError | ManagedLimits.ManagedPolicyRefusedError
@@ -1056,7 +1058,15 @@ export const make = Effect.gen(function* () {
         "so this server cannot create pairing links",
       );
     }
-    return yield* issuePairingLink(input);
+    if (
+      input?.purpose !== "startup" &&
+      input?.ssoVerified !== true &&
+      ManagedLimits.requiresSsoPairing(managedPolicy)
+    ) {
+      return yield* ManagedLimits.refuseLinkPairing(managedPolicy);
+    }
+    const { ssoVerified: _verified, ...link } = input ?? {};
+    return yield* issuePairingLink(link);
   });
 
   const listPairingLinks: EnvironmentAuth["Service"]["listPairingLinks"] = (input) =>

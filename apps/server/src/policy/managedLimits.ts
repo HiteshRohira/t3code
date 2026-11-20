@@ -72,6 +72,17 @@ export function allowsAuthPolicy(policy: PolicyDocument, authPolicy: ServerAuthP
 export const allowsRemoteClients = (policy: PolicyDocument) =>
   allowsAuthPolicy(policy, "remote-reachable");
 
+/** Pairing links are refused; devices pair through the organization's sign-in instead. */
+export const requiresSsoPairing = (policy: PolicyDocument) =>
+  policy.document?.limits?.pairing === "sso";
+
+export const refuseLinkPairing = (policy: PolicyDocument) =>
+  refuse(
+    policy,
+    "pairing links",
+    "so pair through your organization's sign-in: open /api/enterprise/pair/start on this server in a browser",
+  );
+
 /** T3 Connect is a way for remote clients in, so a policy without `remote` turns it off too. */
 export const allowsConnect = (policy: PolicyDocument) =>
   policy.document?.limits?.connect !== false && allowsRemoteClients(policy);

@@ -1269,6 +1269,21 @@ export function createServerEnvironmentAtoms<R, E>(
       label: "environment-data:provider:auth-logout",
       tag: WS_METHODS.providerAuthLogout,
     }),
+    enterpriseStatus: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
+      label: "environment-data:enterprise:status",
+      tag: WS_METHODS.enterpriseSubscribeStatus,
+      idleTtlMs: 0,
+    }),
+    restartForEnterprisePolicy: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:enterprise:restart",
+      tag: WS_METHODS.enterpriseRestart,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
+    enrollEnterpriseDevice: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:enterprise:enroll",
+      tag: WS_METHODS.enterpriseEnroll,
+      concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
+    }),
     providerInstallState: createEnvironmentRpcSubscriptionAtomFamily(runtime, {
       label: "environment-data:provider:install-state",
       tag: WS_METHODS.providerInstallSubscribe,
