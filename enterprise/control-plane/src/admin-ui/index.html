@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>T3 Enterprise Admin</title>
+    <link rel="stylesheet" href="/admin/assets/admin.css" />
+    <script type="module" src="/admin/assets/admin.js"></script>
+  </head>
+  <body>
+    <header>
+      <strong id="org">T3 Enterprise</strong>
+      <nav id="tabs">
+        <button data-tab="users">Users</button>
+        <button data-tab="devices">Devices</button>
+        <button data-tab="teams">Teams</button>
+        <button data-tab="policy">Policy</button>
+        <button data-tab="usage">Usage</button>
+        <button data-tab="audit">Audit</button>
+      </nav>
+      <form method="post" action="/admin/logout" class="logout">
+        <span id="me"></span>
+        <button>Sign out</button>
+      </form>
+    </header>
+    <main>
+      <p id="status" role="status"></p>
+      <section id="view"></section>
+    </main>
+  </body>
+</html>

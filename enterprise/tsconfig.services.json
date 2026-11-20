@@ -1,0 +1,24 @@
+{
+  // Standalone Node services (control plane, gateway) are plain TypeScript on node:http, not
+  // Effect programs, so the Effect idiom rules that the T3 server enforces are off here.
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node"],
+    "plugins": [
+      {
+        "name": "@effect/language-service",
+        "diagnosticSeverity": {
+          "nodeBuiltinImport": "off",
+          "globalDate": "off",
+          "globalConsole": "off",
+          "globalTimers": "off",
+          "globalFetch": "off",
+          "globalRandom": "off",
+          "extendsNativeError": "off",
+          "cryptoRandomUUID": "off",
+          "preferSchemaTaggedError": "off"
+        }
+      }
+    ]
+  }
+}

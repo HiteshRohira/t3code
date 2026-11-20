@@ -144,6 +144,14 @@
       // Alchemy loads src/worker.ts as the Worker entry and reads its default export.
       "entry": ["alchemy.run.ts!", "src/persistence/schema.ts!", "src/worker.ts!"],
     },
+    "enterprise/*": {
+      "includeEntryExports": true,
+    },
+    "enterprise/control-plane": {
+      "includeEntryExports": true,
+      // The admin console's script is served to browsers by path.
+      "entry": ["src/admin-ui/admin.js"],
+    },
     "packages/*": {
       // These workspace packages are private to this monorepo.
       "includeEntryExports": true,

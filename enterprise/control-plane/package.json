@@ -1,0 +1,41 @@
+{
+  "name": "@t3tools/enterprise-control-plane",
+  "private": true,
+  "bin": {
+    "t3-enterprise-control-plane": "./src/bin.ts"
+  },
+  "type": "module",
+  "exports": {
+    "./app": {
+      "types": "./src/app.ts",
+      "import": "./src/app.ts"
+    },
+    "./config": {
+      "types": "./src/config.ts",
+      "import": "./src/config.ts"
+    },
+    "./ca": {
+      "types": "./src/ca.ts",
+      "import": "./src/ca.ts"
+    },
+    "./server": {
+      "types": "./src/server.ts",
+      "import": "./src/server.ts"
+    }
+  },
+  "scripts": {
+    "start": "node src/bin.ts",
+    "typecheck": "effect-tsgo tsrs --noEmit",
+    "test": "vp test run --config ../../vite.config.ts --dir ."
+  },
+  "dependencies": {
+    "@t3tools/enterprise-protocol": "workspace:*",
+    "jose": "catalog:",
+    "node-forge": "catalog:"
+  },
+  "devDependencies": {
+    "@types/node": "catalog:",
+    "@types/node-forge": "catalog:",
+    "vite-plus": "catalog:"
+  }
+}
