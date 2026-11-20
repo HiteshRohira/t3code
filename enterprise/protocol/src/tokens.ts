@@ -166,10 +166,10 @@ export async function signPolicy(
 /** `trusted` are the keys the device's enterprise config pins; nothing fetched is trusted. */
 export async function verifyPolicy(
   token: string,
-  trusted: JSONWebKeySet,
+  trusted: { readonly keys: ReadonlyArray<object> },
   options: { issuer: string; now?: Date },
 ): Promise<PolicyClaims> {
-  const { payload } = await jwtVerify(token, createLocalJWKSet(trusted), {
+  const { payload } = await jwtVerify(token, createLocalJWKSet(trusted as JSONWebKeySet), {
     issuer: options.issuer,
     audience: POLICY_AUDIENCE,
     algorithms: [SIGNING_ALG],

@@ -98,6 +98,8 @@ import * as ServerOwnership from "./serverOwnership.ts";
 import * as AgentAwarenessRelay from "./relay/AgentAwarenessRelay.ts";
 import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import * as ServerSettings from "./serverSettings.ts";
+import * as EnterpriseAgent from "./enterprise/EnterpriseAgent.ts";
+import * as EnterpriseAudit from "./enterprise/EnterpriseAudit.ts";
 import * as ManagedLimits from "./policy/managedLimits.ts";
 import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
 import * as ProjectEnrichmentService from "./project/ProjectEnrichmentService.ts";
@@ -663,6 +665,8 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   layerProviderInstallationRefresh,
   ReplayMarkers.layer,
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
+  // The same layer reference as the runtime's, so this reads the one live event sink.
+  EnterpriseAudit.layer.pipe(Layer.provide(RuntimeLayer.layerEventSink)),
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
@@ -732,6 +736,9 @@ const layerRuntimeCoreDependencies = layerRuntimeCoreDependenciesBase.pipe(
       layerCloudManagedEndpointRuntime,
     ),
   ),
+  // Outermost so it builds first: it points provider environments at the enterprise proxy
+  // before any provider process starts.
+  Layer.provideMerge(EnterpriseAgent.layer),
 );
 
 const layerRuntimeDependencies = layerRuntimeCoreDependencies.pipe(

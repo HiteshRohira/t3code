@@ -26,6 +26,8 @@ import {
 } from "@t3tools/shared/managedPolicyFile";
 
 import { telemetryChannel } from "../config.ts";
+import * as EnterpriseConfig from "../enterprise/EnterpriseConfig.ts";
+import * as EnterprisePolicy from "../enterprise/EnterprisePolicy.ts";
 import * as ManagedLimits from "./managedLimits.ts";
 import * as ManagedProviders from "./managedProviders.ts";
 import * as ManagedSettings from "./managedSettings.ts";
@@ -172,6 +174,35 @@ export const load = Effect.fn("ManagedPolicy.load")(function* (path: string) {
   return yield* fromDocument(path, yield* readManagedPolicyFile(path));
 });
 
+// Enterprise fork: an enterprise machine takes its policy from the control plane. A second,
+// local policy is refused rather than merged, as two native sources are.
+const makeEnterprise = Effect.fn("ManagedPolicy.makeEnterprise")(function* (
+  enterprise: EnterpriseConfig.LoadedEnterpriseConfig,
+  devPath: Option.Option<string>,
+  platform: NodeJS.Platform,
+) {
+  const local = Option.isSome(devPath)
+    ? yield* readManagedPolicyFile(devPath.value)
+    : (yield* readManagedPolicy(
+        platform,
+        ManagedProviders.knownDriverLabels().map(({ driver }) => driver),
+      ))?.document;
+  if (local !== undefined) {
+    return yield* new ManagedPolicyFileError({
+      path: enterprise.path,
+      reason:
+        "a local managed policy also exists; an enterprise machine takes its policy from the control plane",
+    });
+  }
+  const resolved = yield* EnterprisePolicy.resolve(enterprise.document, enterprise.path);
+  const policy = yield* fromDocument(resolved.source, resolved.document);
+  yield* Effect.logInfo("Enterprise policy applies.", {
+    source: resolved.source,
+    organization: resolved.document.organization,
+  });
+  return policy;
+});
+
 const make = Effect.gen(function* () {
   // Source builds may read a policy from elsewhere so it can be tried without root. Release
   // builds never do: any override a user can set is a way around the policy.
@@ -182,6 +213,12 @@ const make = Effect.gen(function* () {
         )
       : Option.none<string>();
   const platform = yield* HostProcess.Platform;
+  const enterprise = yield* EnterpriseConfig.readEnterpriseConfig.pipe(
+    Effect.mapError(
+      (error) => new ManagedPolicyFileError({ path: error.path, reason: error.reason }),
+    ),
+  );
+  if (enterprise !== undefined) return yield* makeEnterprise(enterprise, devPath, platform);
   const policy = yield* Option.match(devPath, {
     onSome: load,
     onNone: () =>
