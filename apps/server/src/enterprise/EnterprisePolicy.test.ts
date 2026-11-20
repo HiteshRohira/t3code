@@ -8,7 +8,6 @@ import {
   type SigningKey,
 } from "@t3tools/enterprise-protocol/tokens";
 import * as ConfigProvider from "effect/ConfigProvider";
-import * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
@@ -33,13 +32,7 @@ const configFor = (key: SigningKey): EnterpriseConfigDocument => ({
 });
 
 const sign = (key: SigningKey, document: unknown, ttlSeconds = 3600) =>
-  Effect.promise(() =>
-    signPolicy(
-      key,
-      { version: 4, document },
-      { issuer: controlPlaneUrl, ttlSeconds, now: DateTime.toDate(DateTime.makeUnsafe(0)) },
-    ),
-  );
+  signPolicy(key, { version: 4, document }, { issuer: controlPlaneUrl, ttlSeconds });
 
 /** Resolves with `token` cached in a fresh state directory. */
 const resolveWith = (config: EnterpriseConfigDocument, token: string | undefined) =>
@@ -64,7 +57,7 @@ const orgPolicy: ManagedPolicyDocument = {
 it.layer(NodeServices.layer)("EnterprisePolicy.resolve", (it) => {
   it.effect("enforces the signed policy cached from the control plane", () =>
     Effect.gen(function* () {
-      const key = yield* Effect.promise(() => generateSigningKey("k1"));
+      const key = yield* generateSigningKey("k1");
       const resolved = yield* resolveWith(configFor(key), yield* sign(key, orgPolicy));
       assert.strictEqual(resolved.version, 4);
       assert.deepEqual(resolved.document, orgPolicy);
@@ -73,7 +66,7 @@ it.layer(NodeServices.layer)("EnterprisePolicy.resolve", (it) => {
 
   it.effect("falls back to the bootstrap policy without a cached one", () =>
     Effect.gen(function* () {
-      const key = yield* Effect.promise(() => generateSigningKey("k1"));
+      const key = yield* generateSigningKey("k1");
       const resolved = yield* resolveWith(configFor(key), undefined);
       assert.isUndefined(resolved.version);
       assert.strictEqual(resolved.document.limits?.maxRuntimeMode, "approval-required");
@@ -82,8 +75,8 @@ it.layer(NodeServices.layer)("EnterprisePolicy.resolve", (it) => {
 
   it.effect("refuses a policy signed by a key the config does not pin", () =>
     Effect.gen(function* () {
-      const pinned = yield* Effect.promise(() => generateSigningKey("k1"));
-      const forger = yield* Effect.promise(() => generateSigningKey("k1"));
+      const pinned = yield* generateSigningKey("k1");
+      const forger = yield* generateSigningKey("k1");
       const resolved = yield* resolveWith(configFor(pinned), yield* sign(forger, orgPolicy));
       assert.isUndefined(resolved.version);
     }),
@@ -91,7 +84,7 @@ it.layer(NodeServices.layer)("EnterprisePolicy.resolve", (it) => {
 
   it.effect("refuses an expired policy", () =>
     Effect.gen(function* () {
-      const key = yield* Effect.promise(() => generateSigningKey("k1"));
+      const key = yield* generateSigningKey("k1");
       const token = yield* sign(key, orgPolicy, 60);
       yield* TestClock.adjust("2 minutes");
       const resolved = yield* resolveWith(configFor(key), token);
@@ -103,7 +96,7 @@ it.layer(NodeServices.layer)("EnterprisePolicy.resolve", (it) => {
     "refuses a policy for another organization or with keys this build cannot enforce",
     () =>
       Effect.gen(function* () {
-        const key = yield* Effect.promise(() => generateSigningKey("k1"));
+        const key = yield* generateSigningKey("k1");
         const config = configFor(key);
         const otherOrg = yield* resolveWith(
           config,

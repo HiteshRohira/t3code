@@ -6,13 +6,17 @@
   },
   "type": "module",
   "exports": {
-    "./gateway": {
-      "types": "./src/gateway.ts",
-      "import": "./src/gateway.ts"
+    "./Config": {
+      "types": "./src/Config.ts",
+      "import": "./src/Config.ts"
     },
-    "./config": {
-      "types": "./src/config.ts",
-      "import": "./src/config.ts"
+    "./Gateway": {
+      "types": "./src/Gateway.ts",
+      "import": "./src/Gateway.ts"
+    },
+    "./Server": {
+      "types": "./src/Server.ts",
+      "import": "./src/Server.ts"
     }
   },
   "scripts": {
@@ -21,10 +25,13 @@
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
+    "@effect/platform-node": "catalog:",
     "@t3tools/enterprise-protocol": "workspace:*",
-    "jose": "catalog:"
+    "@t3tools/shared": "workspace:*",
+    "effect": "catalog:"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "@t3tools/enterprise-control-plane": "workspace:*",
     "@types/node": "catalog:",
     "vite-plus": "catalog:"

@@ -6,9 +6,8 @@
  * @module EnterprisePolicy
  */
 import { ManagedPolicyDocument } from "@t3tools/contracts";
-import { TokenRejected, verifyPolicy } from "@t3tools/enterprise-protocol/tokens";
-import * as Clock from "effect/Clock";
-import * as DateTime from "effect/DateTime";
+import { verifyPolicy } from "@t3tools/enterprise-protocol/tokens";
+import type * as DateTime from "effect/DateTime";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
@@ -32,7 +31,7 @@ const decodeDocument = Schema.decodeUnknownEffect(ManagedPolicyDocument, {
 export interface VerifiedPolicy {
   readonly version: number;
   readonly document: ManagedPolicyDocument;
-  readonly expiresAt: Date;
+  readonly expiresAt: DateTime.Utc;
 }
 
 /** Checks a policy token against the pinned keys and the policy schema this build enforces. */
@@ -40,18 +39,9 @@ export const verifyPolicyToken = Effect.fn("EnterprisePolicy.verifyPolicyToken")
   config: EnterpriseConfigDocument,
   token: string,
 ) {
-  const now = DateTime.toDate(DateTime.makeUnsafe(yield* Clock.currentTimeMillis));
-  const claims = yield* Effect.tryPromise({
-    try: () =>
-      verifyPolicy(token.trim(), config.policyKeys, {
-        issuer: config.controlPlaneUrl,
-        now,
-      }),
-    catch: (cause) =>
-      new EnterprisePolicyRejected({
-        reason: cause instanceof TokenRejected ? cause.message : "the token cannot be verified",
-      }),
-  });
+  const claims = yield* verifyPolicy(token.trim(), config.policyKeys, {
+    issuer: config.controlPlaneUrl,
+  }).pipe(Effect.mapError((cause) => new EnterprisePolicyRejected({ reason: cause.message })));
   const document = yield* decodeDocument(claims.policy).pipe(
     Effect.mapError(
       (cause) =>

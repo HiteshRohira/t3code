@@ -6,21 +6,17 @@
   },
   "type": "module",
   "exports": {
-    "./app": {
-      "types": "./src/app.ts",
-      "import": "./src/app.ts"
+    "./CertificateAuthority": {
+      "types": "./src/CertificateAuthority.ts",
+      "import": "./src/CertificateAuthority.ts"
     },
-    "./config": {
-      "types": "./src/config.ts",
-      "import": "./src/config.ts"
+    "./Config": {
+      "types": "./src/Config.ts",
+      "import": "./src/Config.ts"
     },
-    "./ca": {
-      "types": "./src/ca.ts",
-      "import": "./src/ca.ts"
-    },
-    "./server": {
-      "types": "./src/server.ts",
-      "import": "./src/server.ts"
+    "./Server": {
+      "types": "./src/Server.ts",
+      "import": "./src/Server.ts"
     }
   },
   "scripts": {
@@ -29,11 +25,16 @@
     "test": "vp test run --config ../../vite.config.ts --dir ."
   },
   "dependencies": {
+    "@effect/platform-node": "catalog:",
+    "@node-saml/node-saml": "catalog:",
     "@t3tools/enterprise-protocol": "workspace:*",
+    "@t3tools/shared": "workspace:*",
+    "effect": "catalog:",
     "jose": "catalog:",
     "node-forge": "catalog:"
   },
   "devDependencies": {
+    "@effect/vitest": "catalog:",
     "@types/node": "catalog:",
     "@types/node-forge": "catalog:",
     "vite-plus": "catalog:"

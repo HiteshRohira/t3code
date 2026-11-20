@@ -4,11 +4,11 @@ import * as NodeHttps from "node:https";
 import type * as NodeTls from "node:tls";
 
 import {
-  createCertificateAuthority,
-  issueDeviceCertificate,
-  issueServerCertificate,
-} from "@t3tools/enterprise-control-plane/ca";
-import forge from "node-forge";
+  createAuthorityPem,
+  issueDeviceCertificatePem,
+  issueServerCertificatePem,
+  parseAuthority,
+} from "@t3tools/enterprise-control-plane/CertificateAuthority";
 import { describe, expect, it } from "vite-plus/test";
 
 import {
@@ -17,13 +17,13 @@ import {
   type ProxyCredentials,
 } from "./enterpriseTransport.ts";
 
+// TLS needs certificates valid now; a fixed epoch with a long life keeps the clock out of tests.
+const CERT_EPOCH = Date.UTC(2026, 0, 1);
+const CERT_DAYS = 365 * 20;
+
 const authority = () => {
-  const created = createCertificateAuthority("Example Corp", 1);
-  return {
-    certPem: created.certPem,
-    cert: forge.pki.certificateFromPem(created.certPem),
-    key: forge.pki.privateKeyFromPem(created.keyPem),
-  };
+  const created = createAuthorityPem("Example Corp", { nowMillis: CERT_EPOCH, years: 20 });
+  return parseAuthority(created.certPem, created.keyPem);
 };
 
 interface Seen {
@@ -34,7 +34,11 @@ interface Seen {
 
 async function setup(credentials: () => ProxyCredentials) {
   const ca = authority();
-  const tls = issueServerCertificate(ca, { hostnames: ["localhost", "127.0.0.1"], days: 1 });
+  const tls = issueServerCertificatePem(ca, {
+    hostnames: ["localhost", "127.0.0.1"],
+    days: CERT_DAYS,
+    nowMillis: CERT_EPOCH,
+  });
   const seen: Array<Seen> = [];
   const gateway = NodeHttps.createServer(
     {
@@ -96,12 +100,14 @@ describe("startLocalProxy", () => {
     const key = generateDeviceKey();
     let ca: ReturnType<typeof authority> | undefined;
     await using harness = await setup(() => {
-      const certificate = issueDeviceCertificate(ca!, {
+      const certificate = issueDeviceCertificatePem(ca!, {
         publicKeyPem: key.publicKeyPem,
         deviceId: "device-1",
         userId: "user-1",
-        days: 1,
+        days: CERT_DAYS,
+        nowMillis: CERT_EPOCH,
       });
+      if (typeof certificate === "string") throw new Error(certificate);
       return {
         ok: true,
         lease: "lease-token",

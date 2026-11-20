@@ -91,13 +91,11 @@
     "@t3tools/tailscale": "workspace:*",
     "@t3tools/web": "workspace:*",
     "@types/node": "catalog:",
-    "@types/node-forge": "catalog:",
     "@types/proper-lockfile": "^4.1.4",
     "@types/yauzl": "^3.4.0",
     "effect-acp": "workspace:*",
     "effect-codex-app-server": "workspace:*",
     "graphql": "16.14.1",
-    "node-forge": "catalog:",
     "vite-plus": "catalog:"
   },
   "engines": {

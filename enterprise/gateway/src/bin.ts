@@ -1,26 +1,34 @@
 #!/usr/bin/env node
-import * as NodeUtil from "node:util";
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime";
+import * as NodeServices from "@effect/platform-node/NodeServices";
+import * as Effect from "effect/Effect";
+import * as Layer from "effect/Layer";
+import { Command, Flag } from "effect/cli";
 
-import { loadConfig } from "./config.ts";
-import { startGateway } from "./gateway.ts";
+import { loadConfig } from "./Config.ts";
+import * as Server from "./Server.ts";
 
-const { values } = NodeUtil.parseArgs({ options: { config: { type: "string" } } });
-if (values.config === undefined) {
-  console.error("usage: t3-enterprise-gateway --config <file>");
-  process.exit(2);
-}
+const gateway = Command.make("t3-enterprise-gateway", {
+  config: Flag.String("config").pipe(Flag.withDescription("Path to gateway.json.")),
+}).pipe(
+  Command.withDescription("The T3 Enterprise model gateway."),
+  Command.withHandler(
+    Effect.fn("cli.gateway")(function* ({ config: file }) {
+      const config = yield* loadConfig(file);
+      yield* Effect.logInfo(
+        `Gateway on ${config.listen.host}:${config.listen.port}; upstreams ${config.upstreams
+          .map(
+            (upstream) =>
+              `${upstream.prefix}${upstream.region === undefined ? "" : ` [${upstream.region}]`} → ${upstream.baseUrl}`,
+          )
+          .join(", ")}; redaction ${config.redaction.mode}`,
+      );
+      return yield* Layer.launch(Server.layer(config));
+    }),
+  ),
+);
 
-try {
-  const config = loadConfig(values.config);
-  const { gateway, close } = await startGateway(config);
-  gateway.startSync();
-  console.log(
-    `[gateway] listening on ${config.listen.host}:${config.listen.port}; upstreams ${config.upstreams.map((u) => `${u.prefix} → ${u.baseUrl}`).join(", ")}`,
-  );
-  const stop = () => void close().then(() => process.exit(0));
-  process.once("SIGINT", stop);
-  process.once("SIGTERM", stop);
-} catch (error) {
-  console.error(error instanceof Error ? error.message : error);
-  process.exit(1);
-}
+Command.run(gateway, { version: "0.0.0" }).pipe(
+  Effect.provide(NodeServices.layer),
+  NodeRuntime.runMain,
+);
