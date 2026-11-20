@@ -17,6 +17,7 @@ import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
 
 import * as EventSink from "../orchestration-v2/EventSink.ts";
+import { isTerminalRunStatus } from "../orchestration-v2/ThreadManagementService.ts";
 import * as EnterpriseAgent from "./EnterpriseAgent.ts";
 import * as EnterpriseDevice from "./EnterpriseDevice.ts";
 
@@ -155,6 +156,14 @@ const make = Effect.gen(function* () {
   );
 
   yield* eventSink.stream({ afterSequence: cursor }).pipe(
+    Stream.tap((stored) => {
+      const { event } = stored;
+      if (event.type === "run.created") return agent.noteRun(event.payload.id, true);
+      if (event.type === "run.updated") {
+        return agent.noteRun(event.payload.id, !isTerminalRunStatus(event.payload.status));
+      }
+      return Effect.void;
+    }),
     Stream.map((stored) => ({ sequence: stored.sequence, audit: toAuditEvent(stored) })),
     Stream.groupedWithin(BATCH_SIZE, BATCH_WINDOW),
     Stream.runForEach(ship),

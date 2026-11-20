@@ -10,6 +10,7 @@ import packageJson from "../../package.json" with { type: "json" };
 import * as EnterpriseConfig from "../enterprise/EnterpriseConfig.ts";
 import * as EnterpriseDevice from "../enterprise/EnterpriseDevice.ts";
 import * as EnterpriseEnrollment from "../enterprise/EnterpriseEnrollment.ts";
+import * as EnterpriseLibrary from "../enterprise/EnterpriseLibrary.ts";
 import * as EnterprisePolicy from "../enterprise/EnterprisePolicy.ts";
 import * as ExternalLauncher from "../process/externalLauncher.ts";
 
@@ -124,6 +125,7 @@ const unenrollCommand = Command.make("unenroll").pipe(
   Command.withHandler(
     Effect.fn("cli.enterprise.unenroll")(function* () {
       const { document: config } = yield* requireConfig;
+      yield* EnterpriseLibrary.uninstall(config.organization).pipe(Effect.ignore);
       yield* EnterpriseDevice.removeIdentity(yield* EnterpriseDevice.statePaths);
       yield* Console.log(
         `Removed this computer's enrollment with ${config.organization}. Ask an admin to revoke the device too.`,

@@ -29,6 +29,7 @@ import * as EnterpriseDevice from "./EnterpriseDevice.ts";
 import * as EnterpriseEnrollment from "./EnterpriseEnrollment.ts";
 import * as EnterprisePolicy from "./EnterprisePolicy.ts";
 import * as Transport from "./enterpriseTransport.ts";
+import { pullRequestShim } from "./pullRequestShim.ts";
 import * as ServerConfig from "../config.ts";
 import packageJson from "../../package.json" with { type: "json" };
 
@@ -53,6 +54,13 @@ export class EnterpriseAgent extends Context.Service<
     readonly restart: Effect.Effect<void, EnterpriseActionError>;
     /** Starts enrollment and returns the sign-in link; status reports how it ends. */
     readonly enroll: Effect.Effect<{ readonly signInUrl: string }, EnterpriseActionError>;
+    /** A JSON request to the control plane as this device; none while it is not enrolled. */
+    readonly call: (
+      path: string,
+      options?: { readonly method?: string; readonly body?: unknown },
+    ) => Effect.Effect<Option.Option<Transport.JsonReply>, EnterpriseRequestError>;
+    /** Tracks runs for the fleet heartbeat; terminal statuses remove the run. */
+    readonly noteRun: (runId: string, active: boolean) => Effect.Effect<void>;
     /** Sends audit events; fails while the device cannot reach the control plane. */
     readonly sendAudit: (
       events: ReadonlyArray<AuditEvent>,
@@ -106,6 +114,8 @@ const unmanaged = EnterpriseAgent.of({
   statusChanges: Stream.make(null),
   restart: Effect.fail(notManaged),
   enroll: Effect.fail(notManaged),
+  call: Effect.fn("EnterpriseAgent.call.unmanaged")(() => Effect.succeedNone),
+  noteRun: Effect.fn("EnterpriseAgent.noteRun.unmanaged")(() => Effect.void),
   sendAudit: Effect.fn("EnterpriseAgent.sendAudit.unmanaged")(function* () {
     return yield* Effect.succeed(false);
   }),
@@ -179,6 +189,21 @@ const make = Effect.gen(function* () {
   const environment = yield* HostProcess.Environment;
   for (const name of BYPASS_VARIABLES) delete environment[name];
   Object.assign(environment, providerEnvironment(proxy.port, token));
+  const pullRequests = loadedPolicy.document.limits?.agentPullRequests ?? "allowed";
+  if (pullRequests !== "allowed" && (yield* HostProcess.Platform) !== "win32") {
+    const fs = yield* FileSystem.FileSystem;
+    const path = yield* Path.Path;
+    const bin = path.join(paths.dir, "bin");
+    yield* fs.makeDirectory(bin, { recursive: true });
+    yield* EnterpriseDevice.writeTextAtomically(
+      path.join(bin, "gh"),
+      pullRequestShim(config.organization),
+    );
+    yield* fs.chmod(path.join(bin, "gh"), 0o755);
+    // The shim is POSIX-only, so the separator is always ":".
+    environment["PATH"] = `${bin}:${environment["PATH"] ?? ""}`;
+    environment["T3E_AGENT_PULL_REQUESTS"] = pullRequests;
+  }
   yield* Effect.logInfo("Enterprise model proxy is ready.", {
     organization: config.organization,
     port: proxy.port,
@@ -325,6 +350,42 @@ const make = Effect.gen(function* () {
     Effect.forkScoped,
   );
 
+  const activeRuns = new Set<string>();
+  const hostname = yield* HostProcess.Hostname;
+  const platform = yield* HostProcess.Platform;
+  const heartbeat = Effect.gen(function* () {
+    const snapshot = yield* status;
+    yield* deviceCall(wirePaths.heartbeat, {
+      method: "POST",
+      body: {
+        clientVersion: packageJson.version,
+        platform,
+        hostname: hostname.slice(0, 255),
+        policyVersion: snapshot.policy.loadedVersion,
+        restartRequired: snapshot.policy.restartRequired,
+        activeTurns: activeRuns.size,
+        modelAccess: snapshot.lease.active
+          ? "ok"
+          : !snapshot.enrolled
+            ? "pending"
+            : snapshot.lease.problem?.startsWith("Cannot reach") === true
+              ? "unreachable"
+              : "denied",
+      },
+    });
+  }).pipe(
+    Effect.catch((error) =>
+      Effect.logDebug("Enterprise heartbeat failed.", { error: error.message }),
+    ),
+    Effect.withSpan("EnterpriseAgent.heartbeat"),
+  );
+  yield* heartbeat.pipe(
+    Effect.delay(Duration.seconds(5)),
+    Effect.andThen(Effect.sleep(Duration.minutes(5))),
+    Effect.forever,
+    Effect.forkScoped,
+  );
+
   const sendAudit = Effect.fn("EnterpriseAgent.sendAudit")(function* (
     events: ReadonlyArray<AuditEvent>,
   ) {
@@ -396,6 +457,13 @@ const make = Effect.gen(function* () {
     statusChanges: SubscriptionRef.changes(current),
     restart,
     enroll,
+    call: deviceCall,
+    noteRun: Effect.fn("EnterpriseAgent.noteRun")((runId: string, active: boolean) =>
+      Effect.sync(() => {
+        if (active) activeRuns.add(runId);
+        else activeRuns.delete(runId);
+      }),
+    ),
     sendAudit,
   });
 });

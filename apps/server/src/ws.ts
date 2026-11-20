@@ -180,6 +180,7 @@ import * as ProviderAuthService from "./provider/ProviderAuthService.ts";
 import { makeProviderInstallation } from "./provider/providerInstallation.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as EnterpriseAgent from "./enterprise/EnterpriseAgent.ts";
+import * as EnterpriseSharing from "./enterprise/EnterpriseSharing.ts";
 import * as NpmRelease from "./cloud/npmRelease.ts";
 import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
@@ -1467,6 +1468,7 @@ export const layerWsRpc = (
       const providerInstallation = yield* makeProviderInstallation();
       const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
       const enterpriseAgent = yield* EnterpriseAgent.EnterpriseAgent;
+      const enterpriseSharing = yield* EnterpriseSharing.EnterpriseSharing;
       const npmRelease = yield* NpmRelease.NpmRelease;
       const config = yield* ServerConfig.ServerConfig;
       const lifecycleEvents = yield* ServerLifecycleEvents.ServerLifecycleEvents;
@@ -2622,6 +2624,10 @@ export const layerWsRpc = (
         [WS_METHODS.enterpriseSubscribeStatus]: () => enterpriseAgent.statusChanges,
         [WS_METHODS.enterpriseRestart]: () => enterpriseAgent.restart,
         [WS_METHODS.enterpriseEnroll]: () => enterpriseAgent.enroll,
+        [WS_METHODS.enterpriseShareThread]: (input) => enterpriseSharing.share(input),
+        [WS_METHODS.enterpriseListSharedThreads]: () => enterpriseSharing.list,
+        [WS_METHODS.enterpriseContinueSharedThread]: (input) =>
+          enterpriseSharing.continueShared(input.id),
         [WS_METHODS.serverUpdateServer]: (input) => serverSelfUpdate.update(input),
         [WS_METHODS.serverGetNpmRelease]: (input) => npmRelease.get(input),
         [WS_METHODS.serverUpdateServerWithProgress]: (input) =>
@@ -3442,6 +3448,7 @@ export const layer = Layer.unwrap(
   Effect.gen(function* () {
     const serverBrowser = yield* ServerBrowser.ServerBrowser;
     const serverSelfUpdate = yield* ServerSelfUpdate.ServerSelfUpdate;
+    const enterpriseSharingService = yield* EnterpriseSharing.EnterpriseSharing;
     const npmRelease = yield* NpmRelease.NpmRelease;
     const pullRequests = yield* PullRequestService.PullRequestService;
     const reviewGuides = yield* PullRequestReviewGuideService.PullRequestReviewGuideService;
@@ -3525,6 +3532,9 @@ export const layer = Layer.unwrap(
               Layer.provide(ProviderMaintenanceRunner.layer),
               Layer.provide(Layer.succeed(NpmRelease.NpmRelease, npmRelease)),
               Layer.provide(Layer.succeed(ServerSelfUpdate.ServerSelfUpdate, serverSelfUpdate)),
+              Layer.provide(
+                Layer.succeed(EnterpriseSharing.EnterpriseSharing, enterpriseSharingService),
+              ),
               // Share server-lifetime PR caches so WS mutations invalidate every client's HTTP diffs.
               Layer.provide(Layer.succeed(PullRequestService.PullRequestService, pullRequests)),
               Layer.provide(OtlpEndpointCheck.layer),

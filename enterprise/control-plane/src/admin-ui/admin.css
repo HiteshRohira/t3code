@@ -120,3 +120,15 @@ code {
   align-items: center;
   flex-wrap: wrap;
 }
+
+.tag {
+  margin-left: 0.5rem;
+  padding: 0.05rem 0.4rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: color-mix(in srgb, currentColor 12%, transparent);
+}
+
+.editor textarea {
+  min-height: 12rem;
+}

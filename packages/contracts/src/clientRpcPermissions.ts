@@ -18,6 +18,8 @@ import { WS_METHODS } from "./rpc.ts";
 export const CLIENT_GUARDED_RPC_SCOPES = {
   [WS_METHODS.enterpriseRestart]: AuthEnvironmentMaintainScope,
   [WS_METHODS.enterpriseEnroll]: AuthEnvironmentMaintainScope,
+  [WS_METHODS.enterpriseShareThread]: AuthOrchestrationOperateScope,
+  [WS_METHODS.enterpriseContinueSharedThread]: AuthOrchestrationOperateScope,
   [WS_METHODS.previewClose]: AuthPreviewOperateScope,
   // Stopping a server signals its processes, as closing a terminal does.
   [WS_METHODS.previewStopLocalServer]: AuthTerminalOperateScope,

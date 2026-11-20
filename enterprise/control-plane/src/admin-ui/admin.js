@@ -80,7 +80,7 @@ const views = {
   async users() {
     const { users } = await api("/users");
     return table(
-      ["Email", "Roles", "Team", "Status", "Tokens this month", "Models", ""],
+      ["Email", "Roles", "Team", "Region", "Status", "Tokens this month", "Models", ""],
       users.map((user) => {
         const roles = el("input", { value: user.roles.join(","), size: 18 });
         const team = el("input", { value: user.team ?? "", size: 10 });
@@ -94,8 +94,14 @@ const views = {
           size: 16,
           placeholder: "inherit",
         });
+        const region = el("select", {});
+        for (const option of ["", ...me.regions]) {
+          const node = el("option", { value: option }, option === "" ? "default" : option);
+          if ((user.region ?? "") === option) node.setAttribute("selected", "");
+          region.append(node);
+        }
         const editable = can("write:users");
-        for (const input of [roles, team, limit, models])
+        for (const input of [roles, team, limit, models, region])
           if (!editable) input.setAttribute("disabled", "");
         return el(
           "tr",
@@ -103,7 +109,13 @@ const views = {
           el("td", {}, user.email),
           el("td", {}, roles),
           el("td", {}, team),
-          el("td", {}, user.active ? "active" : "deactivated"),
+          el("td", {}, region),
+          el(
+            "td",
+            {},
+            user.active ? "active" : "deactivated",
+            user.legalHold ? el("span", { class: "tag" }, "legal hold") : null,
+          ),
           el("td", {}, `${tokens(user.budget.used)} / `, limit),
           el("td", {}, models),
           el(
@@ -125,6 +137,7 @@ const views = {
                             team: team.value.trim() || null,
                             monthlyTokens: parseTokens(limit.value),
                             models: parseModels(models.value),
+                            region: region.value || null,
                           }),
                         });
                         await show("users");
@@ -148,6 +161,30 @@ const views = {
                       }),
                   },
                   user.active ? "Deactivate" : "Reactivate",
+                )
+              : null,
+            can("write:holds")
+              ? el(
+                  "button",
+                  {
+                    onclick: () =>
+                      run(async () => {
+                        if (user.legalHold) {
+                          await api(`/legal-holds/${encodeURIComponent(user.id)}`, {
+                            method: "DELETE",
+                          });
+                        } else {
+                          const reason = prompt(`Why hold ${user.email}'s records?`);
+                          if (!reason) return;
+                          await api(`/legal-holds/${encodeURIComponent(user.id)}`, {
+                            method: "PUT",
+                            body: JSON.stringify({ reason }),
+                          });
+                        }
+                        await show("users");
+                      }),
+                  },
+                  user.legalHold ? "Release hold" : "Legal hold",
                 )
               : null,
           ),
@@ -327,7 +364,16 @@ const views = {
       {},
       el("p", {}, `Model usage for ${month}, from the gateway.`),
       table(
-        ["Team", "User", "Model", "Requests", "Input tokens", "Output tokens"],
+        [
+          "Team",
+          "User",
+          "Model",
+          "Region",
+          "Requests",
+          "Input tokens",
+          "Output tokens",
+          "Secrets redacted",
+        ],
         rows.map((row) =>
           el(
             "tr",
@@ -335,9 +381,11 @@ const views = {
             el("td", {}, text(row.team)),
             el("td", {}, row.email),
             el("td", {}, row.model),
+            el("td", {}, text(row.region ?? "default")),
             el("td", {}, String(row.requests)),
             el("td", {}, tokens(row.inputTokens)),
             el("td", {}, tokens(row.outputTokens)),
+            el("td", {}, String(row.redactions)),
           ),
         ),
       ),
@@ -380,7 +428,274 @@ const views = {
   },
 };
 
+const ago = (iso) => {
+  if (iso === null || iso === undefined) return "never";
+  const minutes = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.round(minutes / 60);
+  return hours < 48 ? `${hours} h ago` : `${Math.round(hours / 24)} d ago`;
+};
+
+/** A heartbeat older than this means T3 Code is closed or the machine is offline. */
+const STALE_MINUTES = 15;
+
+function fleetHealth(device) {
+  if (device.status !== "active") return device.status.replace(/_/g, " ");
+  const beat = device.heartbeat;
+  if (beat === null) return "never reported";
+  if ((Date.now() - Date.parse(beat.receivedAt)) / 60_000 > STALE_MINUTES) return "offline";
+  if (beat.modelAccess !== "ok") return `models ${beat.modelAccess}`;
+  if (beat.restartRequired) return "restart pending";
+  return "healthy";
+}
+
+let activityTimer;
+
+Object.assign(views, {
+  async fleet() {
+    const { devices } = await api("/devices");
+    const live = devices.filter((device) => device.revokedAt === null);
+    const versions = new Map();
+    for (const device of live) {
+      const version = device.heartbeat?.clientVersion ?? device.clientVersion ?? "unknown";
+      versions.set(version, (versions.get(version) ?? 0) + 1);
+    }
+    return el(
+      "div",
+      {},
+      el(
+        "p",
+        {},
+        `${live.length} enrolled machines. Versions: `,
+        [...versions].map(([version, count]) => `${version} × ${count}`).join(", ") || "none",
+        ".",
+      ),
+      table(
+        ["Machine", "User", "Version", "Health", "Active turns", "Policy", "Last seen"],
+        live.map((device) =>
+          el(
+            "tr",
+            {},
+            el("td", {}, device.hostname, " ", el("code", {}, device.platform)),
+            el("td", {}, text(device.email)),
+            el("td", {}, text(device.heartbeat?.clientVersion ?? device.clientVersion)),
+            el("td", {}, fleetHealth(device)),
+            el("td", {}, text(device.heartbeat?.activeTurns)),
+            el("td", {}, text(device.heartbeat?.policyVersion ?? "bootstrap")),
+            el("td", {}, ago(device.lastSeenAt)),
+          ),
+        ),
+      ),
+    );
+  },
+
+  async activity() {
+    const teamFilter = el("input", { placeholder: "team (all)", size: 14 });
+    teamFilter.value = localStorageGet("activityTeam") ?? "";
+    const list = el("div", {});
+    const refresh = async () => {
+      const team = teamFilter.value.trim();
+      localStorageSet("activityTeam", team);
+      const { events } = await api(`/activity?limit=200&team=${encodeURIComponent(team)}`);
+      list.replaceChildren(
+        table(
+          ["When", "Who", "Team", "What", "Thread", "Detail"],
+          events.map((event) =>
+            el(
+              "tr",
+              {},
+              el("td", {}, ago(event.occurredAt)),
+              el("td", {}, text(event.email)),
+              el("td", {}, text(event.team)),
+              el("td", {}, event.type),
+              el("td", {}, text(event.threadId)),
+              el("td", {}, el("code", {}, describeDetail(event))),
+            ),
+          ),
+        ),
+      );
+    };
+    teamFilter.addEventListener("change", () => void refresh());
+    await refresh();
+    // Polls while this tab is open; the console stays idle otherwise.
+    activityTimer = setInterval(() => {
+      if (document.visibilityState === "visible") void refresh().catch(() => {});
+    }, 10_000);
+    return el(
+      "div",
+      {},
+      el("p", { class: "row" }, "Live agent work, newest first. Team: ", teamFilter),
+      list,
+    );
+  },
+
+  async library() {
+    const { items } = await api("/library");
+    const editable = can("write:library");
+    const kind = el(
+      "select",
+      {},
+      ["skill", "prompt", "instructions", "mcp-server"].map((value) =>
+        el("option", { value }, value),
+      ),
+    );
+    const name = el("input", { placeholder: "name, e.g. deploy-checklist", size: 22 });
+    const team = el("input", { placeholder: "team (everyone)", size: 14 });
+    const description = el("input", { placeholder: "when to use it", size: 40 });
+    const content = el("textarea", {
+      spellcheck: "false",
+      placeholder: "Markdown, or JSON for an MCP server",
+    });
+    const load = (item) => {
+      kind.value = item.kind;
+      name.value = item.name;
+      team.value = item.team ?? "";
+      description.value = item.description;
+      content.value = item.content;
+    };
+    return el(
+      "div",
+      {},
+      el(
+        "p",
+        {},
+        "Every enrolled machine installs these for Claude Code and Codex: skills and prompts as slash commands, instructions in a managed block of the user's instruction files, MCP servers in Codex's config. A team's item replaces an org item of the same kind and name.",
+      ),
+      table(
+        ["Kind", "Name", "Team", "Description", "Updated", ""],
+        items.map((item) =>
+          el(
+            "tr",
+            {},
+            el("td", {}, item.kind),
+            el("td", {}, el("code", {}, item.name)),
+            el("td", {}, text(item.team ?? "everyone")),
+            el("td", {}, item.description),
+            el("td", {}, ago(item.updatedAt)),
+            el(
+              "td",
+              { class: "row" },
+              el("button", { onclick: () => load(item) }, editable ? "Edit" : "View"),
+              editable
+                ? el(
+                    "button",
+                    {
+                      class: "danger",
+                      onclick: () =>
+                        confirm(`Remove ${item.name} from every machine?`) &&
+                        run(async () => {
+                          await api(`/library/${encodeURIComponent(item.id)}`, {
+                            method: "DELETE",
+                          });
+                          await show("library");
+                        }, "Removed."),
+                    },
+                    "Remove",
+                  )
+                : null,
+            ),
+          ),
+        ),
+      ),
+      editable
+        ? el(
+            "div",
+            { class: "editor" },
+            el("p", { class: "row" }, kind, name, team),
+            el("p", {}, description),
+            content,
+            el(
+              "p",
+              {},
+              el(
+                "button",
+                {
+                  onclick: () =>
+                    run(async () => {
+                      await api("/library", {
+                        method: "PUT",
+                        body: JSON.stringify({
+                          kind: kind.value,
+                          name: name.value.trim(),
+                          team: team.value.trim() || null,
+                          description: description.value.trim(),
+                          content: content.value,
+                        }),
+                      });
+                      await show("library");
+                    }, "Saved. Machines pick it up within their next refresh."),
+                },
+                "Save item",
+              ),
+            ),
+          )
+        : null,
+    );
+  },
+
+  async shared() {
+    const { threads } = await api("/shared-threads");
+    return el(
+      "div",
+      {},
+      el("p", {}, "Threads people handed to their team or the whole organization."),
+      table(
+        ["Shared", "Title", "By", "Audience", "Repository", "Patch", "Note", ""],
+        threads.map((thread) =>
+          el(
+            "tr",
+            {},
+            el("td", {}, ago(thread.createdAt)),
+            el("td", {}, thread.title),
+            el("td", {}, thread.sharedBy),
+            el("td", {}, thread.audience === "org" ? "everyone" : `team ${text(thread.team)}`),
+            el("td", {}, el("code", {}, text(thread.repository))),
+            el("td", {}, `${Math.ceil(thread.patchBytes / 1024)} KB`),
+            el("td", {}, thread.note),
+            el(
+              "td",
+              {},
+              can("write:library")
+                ? el(
+                    "button",
+                    {
+                      class: "danger",
+                      onclick: () =>
+                        confirm(`Unshare "${thread.title}"?`) &&
+                        run(async () => {
+                          await api(`/shared-threads/${encodeURIComponent(thread.id)}`, {
+                            method: "DELETE",
+                          });
+                          await show("shared");
+                        }),
+                    },
+                    "Unshare",
+                  )
+                : null,
+            ),
+          ),
+        ),
+      ),
+    );
+  },
+});
+
+function describeDetail(event) {
+  const detail = event.detail ?? {};
+  return (
+    detail.command ??
+    detail.title ??
+    detail.path ??
+    (Object.keys(detail).length > 0 ? JSON.stringify(detail) : "")
+  );
+}
+
 const NEEDS = {
+  fleet: "read:directory",
+  activity: "watch:team",
+  library: "read:directory",
+  shared: "watch:team",
   users: "read:directory",
   devices: "read:directory",
   teams: "read:directory",
@@ -390,6 +705,7 @@ const NEEDS = {
 };
 
 async function show(name) {
+  clearInterval(activityTimer);
   for (const button of document.querySelectorAll("#tabs button")) {
     if (button.dataset.tab === name) button.setAttribute("aria-current", "page");
     else button.removeAttribute("aria-current");

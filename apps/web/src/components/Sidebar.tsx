@@ -151,7 +151,8 @@ import {
   useQuietThreadShells,
 } from "../state/entities";
 import { environmentPresentations } from "../state/presentation";
-import { primaryServerKeybindingsAtom } from "../state/server";
+import { primaryServerKeybindingsAtom, serverEnvironment } from "../state/server";
+import { useAtomCommand } from "../state/use-atom-command";
 import { environmentProjects } from "../state/projects";
 import { threadEnvironment } from "../state/threads";
 import { useOlderSettledShelf, useOlderSettledShelfGrowth } from "../state/olderSettledShelf";
@@ -930,6 +931,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
   const updateThreadMetadata = useOrchestrationCommand(threadEnvironment.updateMetadata, {
     reportFailure: false,
   });
+  const shareThreadWithOrganization = useAtomCommand(
+    serverEnvironment.shareThreadWithOrganization,
+    { reportFailure: false },
+  );
   const { copyToClipboard: copyPathToClipboard } = useCopyToClipboard<{ path: string }>({
     onCopy: ({ path }) => {
       toastManager.add({
@@ -2624,6 +2629,10 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
               canShareWithGuest: appAtomRegistry.get(
                 canShareWithGuestAtom(threadRef.environmentId),
               ),
+              canShareWithOrganization:
+                appAtomRegistry
+                  .get(environmentPresentations.serverConfigsAtom)
+                  .get(threadRef.environmentId)?.managedPolicy !== undefined,
               canTurnIntoProject: canTurnThreadIntoProject(threadRef),
               supports: {
                 settlement: configLoaded,
@@ -2749,6 +2758,33 @@ export default function Sidebar({ routeReveal }: { routeReveal: SidebarRouteReve
           case "share-guest":
             openGuestShareDialog(threadRef);
             return;
+          case "share-org:team":
+          case "share-org:org": {
+            const shared = await shareThreadWithOrganization({
+              environmentId: threadRef.environmentId,
+              input: {
+                threadId: threadRef.threadId,
+                audience: clicked.value === "share-org:org" ? "org" : "team",
+                note: "",
+              },
+            });
+            if (shared._tag === "Success") {
+              toastManager.add({
+                type: "success",
+                title: "Handed off",
+                description:
+                  "Colleagues find it under Settings → General → Organization, with its changes as a patch.",
+              });
+            } else if (!isAtomCommandInterrupted(shared)) {
+              const error = squashAtomCommandFailure(shared);
+              toastManager.add({
+                type: "error",
+                title: "Could not hand off this thread",
+                description: error instanceof Error ? error.message : "Try again.",
+              });
+            }
+            return;
+          }
           case "regenerate-title": {
             if (isRegeneratingTitle) return;
             const result = await updateThreadMetadata({

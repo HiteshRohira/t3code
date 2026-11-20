@@ -8,6 +8,10 @@ import {
   isRole,
   type AuditEvent,
   type Heartbeat,
+  type LibraryItem,
+  type LibraryItemInput,
+  type SharedThreadInput,
+  type SharedThreadSummary,
   type Role,
   type UsageRecord,
 } from "@t3tools/enterprise-protocol/wire";
@@ -175,6 +179,31 @@ const SCHEMA = [
     created_at TEXT NOT NULL,
     created_by TEXT NOT NULL
   )`,
+  `CREATE TABLE IF NOT EXISTS library_items (
+    id TEXT PRIMARY KEY,
+    kind TEXT NOT NULL,
+    name TEXT NOT NULL,
+    description TEXT NOT NULL,
+    content TEXT NOT NULL,
+    team TEXT,
+    updated_at TEXT NOT NULL,
+    updated_by TEXT NOT NULL,
+    UNIQUE (kind, name, team)
+  )`,
+  `CREATE TABLE IF NOT EXISTS shared_threads (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id),
+    team TEXT,
+    audience TEXT NOT NULL,
+    title TEXT NOT NULL,
+    repository TEXT,
+    branch TEXT,
+    provider TEXT,
+    note TEXT NOT NULL,
+    transcript TEXT NOT NULL,
+    patch TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`,
   `CREATE TABLE IF NOT EXISTS policy (
     version INTEGER PRIMARY KEY,
     document TEXT NOT NULL,
@@ -266,6 +295,30 @@ const toAudit = (row: Row): StoredAuditEvent => {
 };
 
 export const monthOf = (iso: string) => iso.slice(0, 7);
+
+const toLibraryItem = (row: Row): LibraryItem => ({
+  id: String(row["id"]),
+  kind: String(row["kind"]) as LibraryItem["kind"],
+  name: String(row["name"]),
+  description: String(row["description"]),
+  content: String(row["content"]),
+  team: text(row["team"]),
+  updatedAt: String(row["updated_at"]),
+});
+
+const toSharedSummary = (row: Row): SharedThreadSummary => ({
+  id: String(row["id"]),
+  title: String(row["title"]),
+  repository: text(row["repository"]),
+  branch: text(row["branch"]),
+  provider: text(row["provider"]),
+  audience: row["audience"] === "org" ? "org" : "team",
+  note: String(row["note"]),
+  sharedBy: String(row["email"]),
+  team: text(row["team"]),
+  createdAt: String(row["created_at"]),
+  patchBytes: num(row["patch_bytes"]) ?? 0,
+});
 
 const nowIso = Effect.map(DateTime.now, DateTime.formatIso);
 const encodeJsonText = Schema.encodeEffect(Schema.fromJsonString(Schema.Unknown));
@@ -684,6 +737,89 @@ const make = Effect.gen(function* () {
           return deleted + codes.length;
         }),
       ),
+
+    listLibrary: Effect.map(
+      sql<Row>`SELECT * FROM library_items ORDER BY kind, name, team`,
+      (rows) => rows.map(toLibraryItem),
+    ),
+    /** Org-wide items plus `team`'s; a team item replaces an org item of the same kind and name. */
+    libraryFor: (team: string | null) =>
+      Effect.map(
+        sql<Row>`SELECT * FROM library_items WHERE team IS NULL OR team = ${team} ORDER BY team IS NULL DESC`,
+        (rows) => {
+          const byKey = new Map<string, LibraryItem>();
+          for (const item of rows.map(toLibraryItem)) byKey.set(`${item.kind}:${item.name}`, item);
+          return [...byKey.values()];
+        },
+      ),
+    upsertLibraryItem: Effect.fn("Store.upsertLibraryItem")(function* (
+      id: string,
+      item: LibraryItemInput,
+      updatedBy: string,
+    ) {
+      const now = yield* nowIso;
+      yield* sql`DELETE FROM library_items WHERE kind = ${item.kind} AND name = ${item.name} AND team IS ${item.team}`;
+      yield* sql`INSERT INTO library_items ${sql.insert({
+        id,
+        kind: item.kind,
+        name: item.name,
+        description: item.description,
+        content: item.content,
+        team: item.team,
+        updated_at: now,
+        updated_by: updatedBy,
+      })}`;
+      const rows = yield* sql<Row>`SELECT * FROM library_items WHERE id = ${id}`;
+      return toLibraryItem(rows[0]!);
+    }),
+    deleteLibraryItem: (id: string) =>
+      sql`DELETE FROM library_items WHERE id = ${id}`.pipe(Effect.asVoid),
+
+    createSharedThread: Effect.fn("Store.createSharedThread")(function* (
+      id: string,
+      user: { id: string; team: string | null },
+      input: SharedThreadInput,
+    ) {
+      yield* sql`INSERT INTO shared_threads ${sql.insert({
+        id,
+        user_id: user.id,
+        team: user.team,
+        audience: input.audience,
+        title: input.title,
+        repository: input.repository,
+        branch: input.branch,
+        provider: input.provider,
+        note: input.note,
+        transcript: input.transcript,
+        patch: input.patch,
+        created_at: yield* nowIso,
+      })}`;
+    }),
+    /** What `user` may open: org-wide shares, their team's, and their own; null lists all. */
+    sharedThreadsFor: (user: { id: string; team: string | null } | null) =>
+      Effect.map(
+        user === null
+          ? sql<Row>`SELECT s.*, u.email AS email, length(s.patch) AS patch_bytes FROM shared_threads s JOIN users u ON u.id = s.user_id ORDER BY s.created_at DESC LIMIT 500`
+          : sql<Row>`SELECT s.*, u.email AS email, length(s.patch) AS patch_bytes FROM shared_threads s JOIN users u ON u.id = s.user_id
+              WHERE s.audience = 'org' OR s.user_id = ${user.id} OR (s.team IS NOT NULL AND s.team = ${user.team})
+              ORDER BY s.created_at DESC LIMIT 200`,
+        (rows) => rows.map(toSharedSummary),
+      ),
+    sharedThread: (id: string) =>
+      Effect.map(
+        sql<Row>`SELECT s.*, u.email AS email, length(s.patch) AS patch_bytes FROM shared_threads s JOIN users u ON u.id = s.user_id WHERE s.id = ${id}`,
+        (rows) =>
+          rows[0] === undefined
+            ? undefined
+            : {
+                ...toSharedSummary(rows[0]),
+                transcript: String(rows[0]["transcript"]),
+                patch: String(rows[0]["patch"]),
+                ownerId: String(rows[0]["user_id"]),
+              },
+      ),
+    deleteSharedThread: (id: string) =>
+      sql`DELETE FROM shared_threads WHERE id = ${id}`.pipe(Effect.asVoid),
 
     currentPolicy,
     publishPolicy: (document: unknown, createdBy: string) =>

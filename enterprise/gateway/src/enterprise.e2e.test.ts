@@ -809,4 +809,156 @@ layer(layerHarness, { timeout: "60 seconds", excludeTestServices: true })("enter
       }),
     );
   });
+
+  describe("team features", () => {
+    const deviceCall = (
+      device: DeviceIdentity,
+      path: string,
+      init: { method?: string; body?: unknown } = {},
+    ) =>
+      call(`${controlPlaneUrl}${path}`, {
+        method: init.method ?? "GET",
+        ca: caPem,
+        cert: device.certPem,
+        key: device.keyPem,
+        headers: { "content-type": "application/json" },
+        ...(init.body === undefined ? {} : { body: JSON.stringify(init.body) }),
+      });
+    const joinTeam = async (email: string, team: string) => {
+      const users = json(await admin("/users"))["users"] as Array<Record<string, unknown>>;
+      const id = String(users.find((user) => user["email"] === email)!["id"]);
+      await admin(`/users/${id}`, { method: "PATCH", body: { team } });
+    };
+
+    it.effect("hands each machine the org library, with its team's items taking precedence", () =>
+      Effect.gen(function* () {
+        const platform = yield* Effect.promise(() => enroll("platform-dev@example.test"));
+        const web = yield* Effect.promise(() => enroll("web-dev@example.test"));
+        yield* Effect.promise(() => joinTeam("platform-dev@example.test", "platform"));
+        yield* Effect.promise(() => joinTeam("web-dev@example.test", "web"));
+        const put = (body: Record<string, unknown>) =>
+          admin("/library", { method: "PUT", body: { description: "", team: null, ...body } });
+        yield* Effect.promise(() =>
+          put({ kind: "instructions", name: "guidelines", content: "org rules" }),
+        );
+        yield* Effect.promise(() =>
+          put({
+            kind: "instructions",
+            name: "guidelines",
+            content: "platform rules",
+            team: "platform",
+          }),
+        );
+        yield* Effect.promise(() =>
+          put({ kind: "skill", name: "deploy", content: "# Deploy", team: "platform" }),
+        );
+        const invalid = yield* Effect.promise(() =>
+          put({ kind: "mcp-server", name: "bad", content: "not json" }),
+        );
+        expect(invalid.status).toBe(400);
+
+        const library = (device: DeviceIdentity) =>
+          Effect.promise(() => deviceCall(device, "/v1/library")).pipe(
+            Effect.map((reply) => json(reply)["items"] as Array<Record<string, unknown>>),
+          );
+        const platformItems = yield* library(platform);
+        expect(platformItems.map((item) => [item["name"], item["content"]])).toEqual(
+          expect.arrayContaining([
+            ["guidelines", "platform rules"],
+            ["deploy", "# Deploy"],
+          ]),
+        );
+        expect(platformItems).toHaveLength(2);
+        const webItems = yield* library(web);
+        expect(webItems.map((item) => [item["name"], item["content"]])).toEqual([
+          ["guidelines", "org rules"],
+        ]);
+      }),
+    );
+
+    it.effect("shares a thread with the sharer's team only, and records each import", () =>
+      Effect.gen(function* () {
+        const sharer = yield* Effect.promise(() => enroll("sharer@example.test"));
+        const teammate = yield* Effect.promise(() => enroll("teammate@example.test"));
+        const outsider = yield* Effect.promise(() => enroll("outsider@example.test"));
+        yield* Effect.promise(() => joinTeam("sharer@example.test", "payments"));
+        yield* Effect.promise(() => joinTeam("teammate@example.test", "payments"));
+        const created = yield* Effect.promise(() =>
+          deviceCall(sharer, "/v1/shared-threads", {
+            method: "POST",
+            body: {
+              title: "Fix refund rounding",
+              repository: "git@github.com:example/payments.git",
+              branch: "fix/refunds",
+              provider: "claudeAgent",
+              transcript: "## User\nFix the rounding",
+              patch: "diff --git a/x b/x\n",
+              audience: "team",
+              note: "Tests still fail on EUR",
+            },
+          }),
+        );
+        expect(created.status).toBe(201);
+        const id = String(json(created)["id"]);
+
+        const listFor = (device: DeviceIdentity) =>
+          Effect.promise(() => deviceCall(device, "/v1/shared-threads")).pipe(
+            Effect.map((reply) =>
+              (json(reply)["threads"] as Array<Record<string, unknown>>).map(
+                (thread) => thread["id"],
+              ),
+            ),
+          );
+        expect(yield* listFor(teammate)).toContain(id);
+        expect(yield* listFor(outsider)).not.toContain(id);
+        expect(
+          (yield* Effect.promise(() => deviceCall(outsider, `/v1/shared-threads/${id}`))).status,
+        ).toBe(404);
+
+        const opened = json(
+          yield* Effect.promise(() => deviceCall(teammate, `/v1/shared-threads/${id}`)),
+        );
+        expect(opened).toMatchObject({
+          title: "Fix refund rounding",
+          sharedBy: "sharer@example.test",
+        });
+        expect(opened["patch"]).toContain("diff --git");
+
+        const activity = json(yield* Effect.promise(() => admin("/activity?team=payments")))[
+          "events"
+        ] as Array<Record<string, unknown>>;
+        expect(activity.map((event) => event["type"])).toEqual(
+          expect.arrayContaining(["thread.shared", "thread.imported"]),
+        );
+      }),
+    );
+
+    it.effect("shows each machine's last heartbeat in the fleet", () =>
+      Effect.gen(function* () {
+        const device = yield* Effect.promise(() => enroll("fleet@example.test"));
+        const sent = yield* Effect.promise(() =>
+          deviceCall(device, "/v1/heartbeat", {
+            method: "POST",
+            body: {
+              clientVersion: "0.9.0",
+              platform: "darwin",
+              hostname: "laptop",
+              policyVersion: 3,
+              restartRequired: true,
+              activeTurns: 2,
+              modelAccess: "ok",
+            },
+          }),
+        );
+        expect(sent.status).toBe(200);
+        const devices = json(yield* Effect.promise(() => admin("/devices")))["devices"] as Array<
+          Record<string, unknown>
+        >;
+        expect(devices.find((row) => row["id"] === device.deviceId)).toMatchObject({
+          clientVersion: "0.9.0",
+          heartbeat: expect.objectContaining({ activeTurns: 2, restartRequired: true }),
+        });
+      }),
+    );
+  });
 });

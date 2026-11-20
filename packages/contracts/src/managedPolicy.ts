@@ -85,6 +85,11 @@ export const ManagedPolicyLimits = Schema.Struct({
    * owner (enterprise builds); plain pairing links are refused. `links` (the default) allows both.
    */
   pairing: Schema.optionalKey(ManagedPolicyPairing),
+  /**
+   * What agents may do with pull requests through `gh` (enterprise builds): `draft` forces
+   * drafts and leaves marking ready and merging to people; `human-only` lets only people open them.
+   */
+  agentPullRequests: Schema.optionalKey(Schema.Literals(["allowed", "draft", "human-only"])),
   webhookTasks: Schema.optionalKey(Schema.Boolean),
   /** Can only turn product analytics off, never force it on. */
   telemetry: Schema.optionalKey(Schema.Boolean),

@@ -1279,6 +1279,19 @@ export function createServerEnvironmentAtoms<R, E>(
       tag: WS_METHODS.enterpriseRestart,
       concurrency: { mode: "singleFlight", key: ({ environmentId }) => environmentId },
     }),
+    shareThreadWithOrganization: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:enterprise:share-thread",
+      tag: WS_METHODS.enterpriseShareThread,
+    }),
+    sharedThreads: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:enterprise:shared-threads",
+      tag: WS_METHODS.enterpriseListSharedThreads,
+      staleTimeMs: 30_000,
+    }),
+    continueSharedThread: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:enterprise:continue-shared-thread",
+      tag: WS_METHODS.enterpriseContinueSharedThread,
+    }),
     enrollEnterpriseDevice: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:enterprise:enroll",
       tag: WS_METHODS.enterpriseEnroll,

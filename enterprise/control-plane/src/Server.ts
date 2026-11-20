@@ -27,6 +27,7 @@ import * as ScimRoutes from "./ScimRoutes.ts";
 import * as Sessions from "./Sessions.ts";
 import * as SigningKeys from "./SigningKeys.ts";
 import * as Store from "./Store.ts";
+import * as TeamRoutes from "./TeamRoutes.ts";
 
 const layerHttps = Layer.unwrap(
   Effect.gen(function* () {
@@ -58,7 +59,7 @@ const layerDomain = ControlPlane.layer.pipe(
 );
 
 const layerRoutes = HttpRouter.serve(
-  Layer.mergeAll(Routes.layer, AdminRoutes.layer, ScimRoutes.layer),
+  Layer.mergeAll(Routes.layer, AdminRoutes.layer, ScimRoutes.layer, TeamRoutes.layer),
   { disableLogger: true },
 );
 

@@ -5,6 +5,7 @@ import {
   squashAtomCommandFailure,
   type AtomCommandResult,
 } from "@t3tools/client-runtime/state/runtime";
+import { useNavigate } from "@tanstack/react-router";
 import { useRef, useState } from "react";
 
 import { ensureLocalApi } from "../../localApi";
@@ -50,8 +51,15 @@ export function OrganizationSettingsSection() {
   );
   const options = { reportFailure: false, reportDefect: false };
   const restart = useAtomCommand(serverEnvironment.restartForEnterprisePolicy, options);
+  const continueShared = useAtomCommand(serverEnvironment.continueSharedThread, options);
+  const navigate = useNavigate();
+  const sharedQuery = useEnvironmentQuery(
+    environmentId === null || !statusQuery.data?.enrolled
+      ? null
+      : serverEnvironment.sharedThreads({ environmentId, input: {} }),
+  );
   const enroll = useAtomCommand(serverEnvironment.enrollEnterpriseDevice, options);
-  const [pending, setPending] = useState<"restart" | "enroll" | null>(null);
+  const [pending, setPending] = useState<string | null>(null);
   const pendingRef = useRef(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -59,7 +67,7 @@ export function OrganizationSettingsSection() {
   if (environmentId === null || status === null || status === undefined) return null;
 
   async function run<A, E>(
-    label: "restart" | "enroll",
+    label: string,
     request: () => Promise<AtomCommandResult<A, E>>,
   ): Promise<A | undefined> {
     if (pendingRef.current) return undefined;
@@ -89,6 +97,18 @@ export function OrganizationSettingsSection() {
     if (result !== undefined) void ensureLocalApi().shell.openExternal(result.signInUrl);
   };
 
+  const continueThread = async (id: string) => {
+    const result = await run(`continue:${id}`, () =>
+      continueShared({ environmentId, input: { id } }),
+    );
+    if (result === undefined) return;
+    const search = new URLSearchParams({ prompt: result.prompt });
+    if (result.repository !== null) search.set("repo", result.repository);
+    if (result.provider !== null) search.set("provider", result.provider);
+    void navigate({ href: `/new?${search}` });
+  };
+
+  const shared = sharedQuery.data ?? [];
   const enrollment = status.enrollment;
   return (
     <SettingsSection id="organization" title="Organization">
@@ -161,6 +181,41 @@ export function OrganizationSettingsSection() {
           ) : null
         }
       />
+      {status.enrolled ? (
+        <SettingsRow
+          title="Shared with you"
+          description={
+            shared.length === 0
+              ? "Threads colleagues hand off appear here. Hand off one of yours from its menu in the sidebar."
+              : `${shared.length} handed-off ${shared.length === 1 ? "thread" : "threads"}. Continue one to start a new thread with its transcript and changes.`
+          }
+        >
+          {shared.length === 0 ? null : (
+            <ul className="mt-2 divide-y divide-border rounded-md border">
+              {shared.slice(0, 20).map((thread) => (
+                <li key={thread.id} className="flex items-center gap-3 px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm">{thread.title}</p>
+                    <p className="truncate text-muted-foreground text-xs">
+                      {thread.sharedBy} · {thread.audience === "org" ? "everyone" : "your team"} ·{" "}
+                      {formatDate(thread.createdAt)}
+                      {thread.repository ? ` · ${thread.repository}` : ""}
+                    </p>
+                  </div>
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    disabled={pending !== null}
+                    onClick={() => void continueThread(thread.id)}
+                  >
+                    {pending === `continue:${thread.id}` ? "Opening…" : "Continue"}
+                  </Button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </SettingsRow>
+      ) : null}
       {error === null ? null : (
         <p role="alert" className="px-3 text-destructive-foreground text-xs sm:px-4">
           {error}

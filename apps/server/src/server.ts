@@ -100,6 +100,8 @@ import { hasCloudPublicConfig } from "./cloud/publicConfig.ts";
 import * as ServerSettings from "./serverSettings.ts";
 import * as EnterpriseAgent from "./enterprise/EnterpriseAgent.ts";
 import * as EnterprisePairing from "./enterprise/EnterprisePairing.ts";
+import * as EnterpriseLibrary from "./enterprise/EnterpriseLibrary.ts";
+import * as EnterpriseSharing from "./enterprise/EnterpriseSharing.ts";
 import * as EnterpriseAudit from "./enterprise/EnterpriseAudit.ts";
 import * as ManagedLimits from "./policy/managedLimits.ts";
 import * as ManagedPolicy from "./policy/ManagedPolicy.ts";
@@ -668,6 +670,7 @@ const layerRuntimeCoreDependenciesBase = Layer.mergeAll(
   Layer.effectDiscard(ProjectSettingsOverrideSweep.sweep),
   // The same layer reference as the runtime's, so this reads the one live event sink.
   EnterpriseAudit.layer.pipe(Layer.provide(RuntimeLayer.layerEventSink)),
+  EnterpriseLibrary.layer,
 ).pipe(
   Layer.provideMerge(layerOrchestrationApplication),
   Layer.provideMerge(RuntimeLayer.layerEventInfrastructure),
@@ -786,7 +789,7 @@ const layerMakeRoutes = Layer.mergeAll(
     DeviceHubProxy.layer,
     ServerBrowserStream.routeLayer,
     ServerHttp.layerStaticAndDevRoute,
-    Ws.layer,
+    Ws.layer.pipe(Layer.provide(EnterpriseSharing.layer)),
   ),
   McpHttpServer.layer.pipe(
     Layer.provide(ProviderAdapterRegistry.layerFromProviderInstanceRegistry),

@@ -351,7 +351,14 @@ import {
   ProviderConsumeResetCreditInput,
   ProviderConsumeResetCreditResult,
 } from "./providerUsageLimits.ts";
-import { EnterpriseActionError, EnterpriseEnrollResult, EnterpriseStatus } from "./enterprise.ts";
+import {
+  EnterpriseActionError,
+  EnterpriseContinueSharedThreadResult,
+  EnterpriseEnrollResult,
+  EnterpriseSharedThreadSummary,
+  EnterpriseShareThreadInput,
+  EnterpriseStatus,
+} from "./enterprise.ts";
 import { UsagePricing, UsageReadError, UsageSummary, UsageSummaryInput } from "./usage.ts";
 import {
   StorageCleanupReport,
@@ -452,6 +459,9 @@ export const WS_METHODS = {
   enterpriseSubscribeStatus: "enterprise.subscribeStatus",
   enterpriseRestart: "enterprise.restart",
   enterpriseEnroll: "enterprise.enroll",
+  enterpriseShareThread: "enterprise.shareThread",
+  enterpriseListSharedThreads: "enterprise.listSharedThreads",
+  enterpriseContinueSharedThread: "enterprise.continueSharedThread",
 
   vcsPull: "vcs.pull",
   vcsRefreshStatus: "vcs.refreshStatus",
@@ -766,6 +776,24 @@ const WsEnterpriseRestartRpc = Rpc.make(WS_METHODS.enterpriseRestart, {
 const WsEnterpriseEnrollRpc = Rpc.make(WS_METHODS.enterpriseEnroll, {
   payload: Schema.Struct({}),
   success: EnterpriseEnrollResult,
+  error: Schema.Union([EnterpriseActionError, EnvironmentAuthorizationError]),
+});
+
+const WsEnterpriseShareThreadRpc = Rpc.make(WS_METHODS.enterpriseShareThread, {
+  payload: EnterpriseShareThreadInput,
+  success: Schema.Struct({ id: Schema.String }),
+  error: Schema.Union([EnterpriseActionError, EnvironmentAuthorizationError]),
+});
+
+const WsEnterpriseListSharedThreadsRpc = Rpc.make(WS_METHODS.enterpriseListSharedThreads, {
+  payload: Schema.Struct({}),
+  success: Schema.Array(EnterpriseSharedThreadSummary),
+  error: Schema.Union([EnterpriseActionError, EnvironmentAuthorizationError]),
+});
+
+const WsEnterpriseContinueSharedThreadRpc = Rpc.make(WS_METHODS.enterpriseContinueSharedThread, {
+  payload: Schema.Struct({ id: Schema.String }),
+  success: EnterpriseContinueSharedThreadResult,
   error: Schema.Union([EnterpriseActionError, EnvironmentAuthorizationError]),
 });
 
@@ -2019,6 +2047,9 @@ export const WsRpcGroup = RpcGroup.make(
   WsEnterpriseSubscribeStatusRpc,
   WsEnterpriseRestartRpc,
   WsEnterpriseEnrollRpc,
+  WsEnterpriseShareThreadRpc,
+  WsEnterpriseListSharedThreadsRpc,
+  WsEnterpriseContinueSharedThreadRpc,
   WsGuestShareCreateRpc,
   WsServerProbeRpc,
   WsServerGetConfigRpc,

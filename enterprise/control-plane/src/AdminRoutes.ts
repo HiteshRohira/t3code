@@ -39,6 +39,7 @@ export type Permission =
   | "read:audit"
   | "read:usage"
   | "write:holds"
+  | "write:library"
   | "watch:team";
 
 const GRANTS: Readonly<Record<Role, ReadonlyArray<Permission>>> = {
@@ -52,6 +53,7 @@ const GRANTS: Readonly<Record<Role, ReadonlyArray<Permission>>> = {
     "read:audit",
     "read:usage",
     "write:holds",
+    "write:library",
     "watch:team",
   ],
   maintainer: [
@@ -60,6 +62,7 @@ const GRANTS: Readonly<Record<Role, ReadonlyArray<Permission>>> = {
     "write:teams",
     "read:policy",
     "read:usage",
+    "write:library",
     "watch:team",
   ],
   auditor: ["read:directory", "read:policy", "read:audit", "read:usage", "write:holds"],

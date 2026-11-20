@@ -93,6 +93,7 @@ import * as ServerLifecycleEvents from "./serverLifecycleEvents.ts";
 import * as ServerRuntimeStartup from "./serverRuntimeStartup.ts";
 import * as ServerSelfUpdate from "./cloud/selfUpdate.ts";
 import * as EnterpriseAgent from "./enterprise/EnterpriseAgent.ts";
+import * as EnterpriseSharing from "./enterprise/EnterpriseSharing.ts";
 import * as NpmRelease from "./cloud/npmRelease.ts";
 import * as SessionStore from "./auth/SessionStore.ts";
 import * as SourceControlDiscovery from "./sourceControl/SourceControlDiscovery.ts";
@@ -715,6 +716,7 @@ const layerUnusedConfigRpcServices = Layer.mergeAll(
   Layer.mock(ServerRuntimeStartup.ServerRuntimeStartup)({}),
   Layer.mock(ServerSelfUpdate.ServerSelfUpdate)({}),
   Layer.mock(EnterpriseAgent.EnterpriseAgent)({ config: undefined }),
+  Layer.mock(EnterpriseSharing.EnterpriseSharing)({}),
   Layer.mock(NpmRelease.NpmRelease)({}),
   Layer.mock(SessionStore.SessionStore)({ cookieName: "config-test", legacyCookieName: undefined }),
   Layer.mock(SourceControlDiscovery.SourceControlDiscovery)({}),
