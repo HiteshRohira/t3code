@@ -3,7 +3,7 @@ import * as Console from "effect/Console";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import { Command } from "effect/cli";
+import { Command, Flag } from "effect/cli";
 import * as CliError from "effect/cli/CliError";
 
 import packageJson from "../../package.json" with { type: "json" };
@@ -39,17 +39,24 @@ const RunningStatus = Schema.Struct({
 });
 const decodeRunningStatus = Schema.decodeUnknownEffect(Schema.fromJsonString(RunningStatus));
 
-const enrollCommand = Command.make("enroll").pipe(
+const enrollCommand = Command.make("enroll", {
+  noBrowser: Flag.Boolean("no-browser").pipe(
+    Flag.withDescription("Print the sign-in link instead of opening a browser, as over SSH."),
+    Flag.withDefault(false),
+  ),
+}).pipe(
   Command.withDescription("Sign in to your organization and enroll this computer."),
   Command.withHandler(
-    Effect.fn("cli.enterprise.enroll")(function* () {
+    Effect.fn("cli.enterprise.enroll")(function* ({ noBrowser }) {
       const { document: config } = yield* requireConfig;
       const launcher = yield* ExternalLauncher.ExternalLauncher;
       const { identity, policyVersion } = yield* EnterpriseEnrollment.enroll(config, {
         clientVersion: packageJson.version,
         showSignInUrl: (url) =>
           Console.log(`Sign in to ${config.organization} in your browser:\n\n  ${url}\n`).pipe(
-            Effect.andThen(launcher.launchBrowser(url).pipe(Effect.ignore)),
+            Effect.andThen(
+              noBrowser ? Effect.void : launcher.launchBrowser(url).pipe(Effect.ignore),
+            ),
           ),
       });
       yield* Console.log(

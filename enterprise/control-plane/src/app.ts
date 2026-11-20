@@ -451,7 +451,11 @@ export class ControlPlane {
 
   // Device routes: a CA-signed client certificate for a live device of an active user.
 
-  #device(request: NodeHttp.IncomingMessage): { device: Device; user: User } {
+  /** `allowRevoked` serves audit uploads: a revoked device may still report what it did. */
+  #device(
+    request: NodeHttp.IncomingMessage,
+    options: { allowRevoked?: boolean } = {},
+  ): { device: Device; user: User } {
     const certificate = verifiedClientCertificate(request);
     if (certificate === undefined) {
       throw new HttpError(401, "device_unknown", "present an enrolled device certificate");
@@ -460,7 +464,9 @@ export class ControlPlane {
     if (device === undefined)
       throw new HttpError(401, "device_unknown", "this device is not enrolled");
     const denial = this.deviceDenial(device);
-    if (denial !== undefined) throw new HttpError(403, denial, denialMessage(denial));
+    if (denial !== undefined && !options.allowRevoked) {
+      throw new HttpError(403, denial, denialMessage(denial));
+    }
     const user = this.store.userById(device.userId)!;
     this.store.touchDevice(device.id);
     return { device, user };
@@ -540,7 +546,7 @@ export class ControlPlane {
   }
 
   async #ingestAudit(request: NodeHttp.IncomingMessage, response: NodeHttp.ServerResponse) {
-    const { device, user } = this.#device(request);
+    const { device, user } = this.#device(request, { allowRevoked: true });
     const body = (await readJson(request, 4 * 1024 * 1024)) as Partial<AuditBatch>;
     if (!Array.isArray(body.events) || body.events.length > 1000) {
       throw new HttpError(400, "invalid_request", "events must be a list of at most 1000");
@@ -548,7 +554,11 @@ export class ControlPlane {
     const events = body.events.filter(isAuditEvent);
     const stored = this.store.appendAudit({ id: device.id, userId: user.id }, events);
     await this.audit.publish(stored.map((event) => ({ ...event, email: user.email })));
-    return sendJson(response, 200, { accepted: events.length });
+    // Reported, not silently dropped, so a device can tell its events are not landing.
+    return sendJson(response, 200, {
+      accepted: events.length,
+      rejected: body.events.length - events.length,
+    });
   }
 
   /** Org actions (enrollment, revocations, policy changes) land in the same audit trail. */
@@ -618,7 +628,7 @@ const isAuditEvent = (value: unknown): value is AuditEvent => {
   const event = value as Record<string, unknown>;
   return (
     typeof event["id"] === "string" &&
-    event["id"].length <= 128 &&
+    event["id"].length <= 512 &&
     typeof event["type"] === "string" &&
     event["type"].length <= 128 &&
     typeof event["occurredAt"] === "string" &&

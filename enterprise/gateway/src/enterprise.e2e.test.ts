@@ -373,6 +373,21 @@ describe("org controls", () => {
     const renewal = await lease(device);
     expect(renewal.status).toBe(403);
     expect(json(renewal)["error"]).toBe("device_revoked");
+
+    // What a revoked device did last is what security most wants to see.
+    const audit = await call(`${controlPlaneUrl}/v1/audit`, {
+      method: "POST",
+      ca: caPem,
+      cert: device.certPem,
+      key: device.keyPem,
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({
+        events: [
+          { id: "after-revoke", type: "command.executed", occurredAt: "2026-11-20T12:00:00.000Z" },
+        ],
+      }),
+    });
+    expect(json(audit)).toMatchObject({ accepted: 1 });
   });
 
   it("enforces a model allow-list carried in the lease", async () => {
@@ -427,6 +442,31 @@ describe("org controls", () => {
     });
     expect(json(patched)["active"]).toBe(false);
     expect(json(await lease(device))["error"]).toBe("device_revoked");
+  });
+
+  it("stores device audit events once, with ids as long as T3's event ids", async () => {
+    const device = await enroll("audited@example.test");
+    // T3 event ids embed the thread and command ids and run past 128 characters.
+    const id = `event:thread:mcp%3A${"a".repeat(36)}:command:mcp%3A${"b".repeat(36)}:${"c".repeat(36)}`;
+    const send = () =>
+      call(`${controlPlaneUrl}/v1/audit`, {
+        method: "POST",
+        ca: caPem,
+        cert: device.certPem,
+        key: device.keyPem,
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          events: [
+            { id, type: "thread.created", occurredAt: "2026-11-20T12:00:00.000Z", threadId: "t1" },
+          ],
+        }),
+      });
+    expect(json(await send())).toMatchObject({ accepted: 1, rejected: 0 });
+    await send();
+    const events = json(await admin("/audit?limit=1000"))["events"] as Array<
+      Record<string, unknown>
+    >;
+    expect(events.filter((event) => event["id"] === id)).toHaveLength(1);
   });
 
   it("records enrollments and revocations in the audit trail", async () => {

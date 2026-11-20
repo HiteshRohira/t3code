@@ -1,6 +1,28 @@
 # Enterprise fork: plan
 
-Status: draft · Owner: Hitesh · Base: fork of `pingdotgg/t3code` (MIT)
+Status: Phase 1 built, Phase 2 partly · Owner: Hitesh · Base: fork of `pingdotgg/t3code` (MIT)
+
+## 0. Progress
+
+Operator guide: [README.md](README.md). Upstream edits: [UPSTREAM_TOUCHPOINTS.md](UPSTREAM_TOUCHPOINTS.md).
+
+| Item                                                                        | State                                                              |
+| --------------------------------------------------------------------------- | ------------------------------------------------------------------ |
+| Milestone 1 (§10): gateway, control plane, leases, device agent, demo       | Done; verified with a real Claude Code turn through T3             |
+| SSO (OIDC + PKCE), group → role mapping, allowed groups                     | Done (SAML not yet)                                                |
+| Device enrollment, org CA, mTLS, cert-bound leases                          | Done (keys in files, not Secure Enclave/TPM yet)                   |
+| Roles: admin, maintainer, auditor, developer, viewer                        | Done in the control plane                                          |
+| Audit: device events, admin actions, JSONL/HTTP sinks, export API           | Done                                                               |
+| Signed central policy, `whenUnreachable` modes (§7)                         | Done; policy applies at restart (upstream reads it once)           |
+| SCIM 2.0 Users (Okta / Entra)                                               | Done (Groups endpoint not yet)                                     |
+| Budgets per user and team, model allow-lists, rate limits, usage reports    | Done                                                               |
+| Admin console                                                               | Done: users, devices, teams, policy, usage, audit                  |
+| `t3 enterprise enroll / status / unenroll`                                  | Done                                                               |
+| Enterprise status in the T3 Settings UI                                     | Not yet (CLI and in-chat errors only)                              |
+| SSO-gated pairing for web/mobile clients (§4.4)                             | Not yet; restrict with `clients` and `connect: false`              |
+| Secret redaction at the gateway, retention, data residency                  | Not yet                                                            |
+| Codex through the gateway                                                   | Routed (`OPENAI_BASE_URL`), not yet verified with a real Codex CLI |
+| Phase 3 team features, Phase 4 packaging (rebrand, signing, MDM installers) | Not yet; need decisions in §9                                      |
 
 ## 1. Goal
 

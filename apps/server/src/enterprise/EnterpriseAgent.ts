@@ -304,7 +304,12 @@ const make = Effect.gen(function* () {
     events: ReadonlyArray<AuditEvent>,
   ) {
     const reply = yield* deviceCall(wirePaths.audit, { method: "POST", body: { events } });
-    return Option.isSome(reply) && reply.value.status === 200;
+    if (Option.isNone(reply) || reply.value.status !== 200) return false;
+    const rejected = (reply.value.body as { rejected?: unknown } | null)?.rejected;
+    if (typeof rejected === "number" && rejected > 0) {
+      yield* Effect.logWarning("The control plane rejected audit events.", { rejected });
+    }
+    return true;
   });
 
   return EnterpriseAgent.of({ config: loaded, status, sendAudit });
