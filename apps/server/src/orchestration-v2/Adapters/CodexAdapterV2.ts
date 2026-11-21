@@ -120,7 +120,11 @@ import {
   shouldPersistProviderEvent,
 } from "../../provider/EventNdjsonLogger.ts";
 import * as ProviderEventLoggers from "@t3tools/provider-core/server/ProviderEventLoggers";
-import { codexAppServerArgs, resolveCodexLaunchArgs } from "../../provider/codexLaunchArgs.ts";
+import {
+  codexAppServerArgs,
+  codexGatewayModelProvider,
+  resolveCodexLaunchArgs,
+} from "../../provider/codexLaunchArgs.ts";
 import { mergeProviderInstanceEnvironment } from "@t3tools/provider-core/server/instanceEnvironment";
 import * as McpProviderSession from "@t3tools/provider-core/server/mcpSession";
 import * as McpProviderSessions from "@t3tools/provider-core/server/McpProviderSessions";
@@ -1746,14 +1750,16 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
                     }),
                 ),
               );
+        const launchEnvironment = resolvedRuntime?.environment ?? adapterOptions.environment;
         const client = yield* clientFactory.open({
           instanceId: adapterOptions.instanceId,
           threadId: input.threadId,
           providerSessionId: input.providerSessionId,
           runtimePolicy: input.runtimePolicy,
           settings: resolvedRuntime?.config ?? adapterOptions.settings,
-          environment: resolvedRuntime?.environment ?? adapterOptions.environment,
+          environment: launchEnvironment,
         });
+        const gatewayModelProvider = codexGatewayModelProvider(launchEnvironment);
         const additionalContextByThread = yield* Ref.make(
           new Map<
             string,
@@ -6764,7 +6770,11 @@ export const makeCodexAdapterV2 = Effect.fn("makeCodexAdapterV2")(function* (
           threadId: string,
           params: Record<string, unknown>,
         ) {
-          const resume = client.raw.request("thread/resume", { threadId, ...params });
+          const resume = client.raw.request("thread/resume", {
+            threadId,
+            ...params,
+            ...(gatewayModelProvider === undefined ? {} : { modelProvider: gatewayModelProvider }),
+          });
           return yield* resume.pipe(
             Effect.catchTags({
               CodexAppServerRequestError: (cause) =>

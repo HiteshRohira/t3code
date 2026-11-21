@@ -92,23 +92,8 @@ const providerEnvironment = (port: number, token: string) => ({
   ANTHROPIC_API_KEY: token,
   OPENAI_BASE_URL: `http://127.0.0.1:${port}/openai/v1`,
   OPENAI_API_KEY: token,
+  T3E_CODEX_GATEWAY_URL: `http://127.0.0.1:${port}/openai/v1`,
 });
-
-/**
- * Codex ignores OPENAI_BASE_URL, so it gets its own provider pointing at the proxy. Values carry
- * no quotes because T3 tokenizes these arguments; Codex reads an unquoted value as a string.
- */
-export const codexGatewayLaunchArgs = (port: number, existing: string | undefined) =>
-  [
-    "-c model_provider=t3-enterprise",
-    "-c model_providers.t3-enterprise.name=t3-enterprise",
-    `-c model_providers.t3-enterprise.base_url=http://127.0.0.1:${port}/openai/v1`,
-    "-c model_providers.t3-enterprise.env_key=OPENAI_API_KEY",
-    "-c model_providers.t3-enterprise.wire_api=responses",
-    existing?.trim() ?? "",
-  ]
-    .join(" ")
-    .trim();
 
 /** Credentials that would send a provider somewhere other than the gateway. */
 const BYPASS_VARIABLES = [
@@ -205,10 +190,6 @@ const make = Effect.gen(function* () {
   const environment = yield* HostProcess.Environment;
   for (const name of BYPASS_VARIABLES) delete environment[name];
   Object.assign(environment, providerEnvironment(proxy.port, token));
-  environment["T3CODE_CODEX_LAUNCH_ARGS"] = codexGatewayLaunchArgs(
-    proxy.port,
-    environment["T3CODE_CODEX_LAUNCH_ARGS"],
-  );
   const pullRequests = loadedPolicy.document.limits?.agentPullRequests ?? "allowed";
   if (pullRequests !== "allowed" && (yield* HostProcess.Platform) !== "win32") {
     const fs = yield* FileSystem.FileSystem;

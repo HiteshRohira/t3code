@@ -10,7 +10,7 @@ import { HttpRouter } from "effect/http";
 
 import { ControlPlaneConfig } from "./Config.ts";
 import { ControlPlane, Refusal } from "./ControlPlane.ts";
-import { escapeHtml, html, page, readForm, redirect, respond } from "./Http.ts";
+import { escapeHtml, html, page, readForm, redirect, respondPage } from "./Http.ts";
 import { Sessions, type PendingLogin } from "./Sessions.ts";
 import * as SigningKeys from "./SigningKeys.ts";
 import { Store, type User } from "./Store.ts";
@@ -82,7 +82,7 @@ export const routes = Layer.mergeAll(
   HttpRouter.add(
     "POST",
     CONFIRM_PATH,
-    respond(
+    respondPage(
       Effect.gen(function* () {
         const config = yield* ControlPlaneConfig;
         const keys = yield* SigningKeys.SigningKeys;

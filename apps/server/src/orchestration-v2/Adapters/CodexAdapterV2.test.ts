@@ -1238,6 +1238,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
     readChildMetadata?: Parameters<typeof withCodexReplayChildMetadata>[2],
     beforeEmitInbound?: CodexReplay.CodexAppServerReplayDriver["beforeEmitInbound"],
     onUsageLimits?: CodexAdapterV2.CodexAdapterV2Options["onUsageLimits"],
+    environment: NodeJS.ProcessEnv = {},
   ) =>
     Effect.gen(function* () {
       const fileSystem = yield* FileSystem.FileSystem;
@@ -1293,7 +1294,7 @@ describe("CodexAdapterV2 post-settle continuation", () => {
       const adapter = yield* CodexAdapterV2.makeCodexAdapterV2({
         instanceId: CodexAdapterV2.CODEX_DEFAULT_INSTANCE_ID,
         settings: DEFAULT_CODEX_SETTINGS,
-        environment: {},
+        environment,
         clientFactory,
         ...(onUsageLimits ? { onUsageLimits } : {}),
         digest: yield* Digest.Digest,
@@ -2740,6 +2741,68 @@ describe("CodexAdapterV2 post-settle continuation", () => {
         assert.equal(resumed.status, "idle");
         assert.equal(DateTime.toEpochMillis(resumed.updatedAt), 1782622450000);
         assert.deepEqual(resumeThreadEnvs, [harness.threadId, undefined, explicitThreadId]);
+      }).pipe(
+        Effect.provide(
+          Layer.mergeAll(
+            IdAllocator.layer,
+            McpProviderSessions.layer,
+            NodeServices.layer,
+            NodeCrypto.layer,
+          ),
+        ),
+      ),
+    ),
+  );
+
+  it.effect("resumes sessions recorded before enrollment through the enterprise gateway", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const scenario = "codex-resume-gateway";
+        const nativeThreadId = `native-${scenario}-thread`;
+        const transcript = makeCodexReplayTranscript({
+          scenario,
+          entries: [
+            ...codexReplayPreamble({
+              nativeThreadId,
+              nativeTurnId: "unused-turn",
+              prompt: "unused-prompt",
+            }).slice(0, 5),
+            {
+              type: "expect_outbound",
+              label: "thread/resume",
+              frame: {
+                id: 3,
+                method: "thread/resume",
+                params: {
+                  threadId: nativeThreadId,
+                  excludeTurns: true,
+                  config: CodexAdapterV2.CODEX_THREAD_CONFIG,
+                  modelProvider: "t3-enterprise",
+                },
+              },
+            },
+            {
+              type: "emit_inbound",
+              label: "thread/resume",
+              frame: { id: 3, result: { thread: { id: nativeThreadId, updatedAt: 1782622450 } } },
+            },
+          ],
+        });
+        const harness = yield* makeCodexReplayHarness(
+          transcript,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          undefined,
+          { T3E_CODEX_GATEWAY_URL: "http://127.0.0.1:4100/openai/v1" },
+        );
+        const resumed = yield* harness.runtime.resumeThread({
+          providerThread: harness.providerThread,
+          modelSelection: CODEX_TEST_MODEL_SELECTION,
+          runtimePolicy: CODEX_TEST_RUNTIME_POLICY,
+        });
+        assert.equal(resumed.nativeThreadRef?.nativeId, nativeThreadId);
       }).pipe(
         Effect.provide(
           Layer.mergeAll(

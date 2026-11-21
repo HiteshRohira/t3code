@@ -120,6 +120,7 @@ export const makeCodexManagedRuntime = Effect.fn("makeCodexManagedRuntime")(func
     };
     delete environment.ACCESS_TOKEN;
     delete environment.T3CODE_CODEX_LAUNCH_ARGS;
+    delete environment.T3E_CODEX_GATEWAY_URL;
     delete environment.OPENAI_API_KEY;
     delete environment.OPENAI_BASE_URL;
     return {

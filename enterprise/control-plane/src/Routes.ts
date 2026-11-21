@@ -33,6 +33,7 @@ import {
   readJson,
   redirect,
   respond,
+  respondPage,
   searchParams,
 } from "./Http.ts";
 import { Oidc, type Identity } from "./Oidc.ts";
@@ -141,7 +142,7 @@ const signInRoutes = Layer.mergeAll(
   HttpRouter.add(
     "GET",
     paths.enrollStart,
-    respond(
+    respondPage(
       Effect.gen(function* () {
         const params = searchParams(yield* HttpServerRequest.HttpServerRequest);
         const deviceRedirect = params.get("redirect_uri") ?? "";
@@ -155,11 +156,11 @@ const signInRoutes = Layer.mergeAll(
       }),
     ),
   ),
-  HttpRouter.add("GET", "/admin/login", respond(beginLogin({ kind: "admin" }))),
+  HttpRouter.add("GET", "/admin/login", respondPage(beginLogin({ kind: "admin" }))),
   HttpRouter.add(
     "GET",
     paths.pairingStart,
-    respond(
+    respondPage(
       Effect.gen(function* () {
         const params = searchParams(yield* HttpServerRequest.HttpServerRequest);
         const returnTo = params.get("return_to") ?? "";
@@ -180,7 +181,7 @@ const signInRoutes = Layer.mergeAll(
   HttpRouter.add(
     "GET",
     OIDC_CALLBACK_PATH,
-    respond(
+    respondPage(
       Effect.gen(function* () {
         const config = yield* ControlPlaneConfig;
         const params = searchParams(yield* HttpServerRequest.HttpServerRequest);
@@ -207,7 +208,7 @@ const signInRoutes = Layer.mergeAll(
   HttpRouter.add(
     "POST",
     SAML_CALLBACK_PATH,
-    respond(
+    respondPage(
       Effect.gen(function* () {
         const form = yield* readForm;
         const pending = yield* (yield* Sessions).take(form.get("RelayState") ?? undefined);
@@ -240,7 +241,7 @@ const signInRoutes = Layer.mergeAll(
   HttpRouter.add(
     "GET",
     "/dev/login",
-    respond(
+    respondPage(
       Effect.gen(function* () {
         const config = yield* ControlPlaneConfig;
         if (!config.insecureDevLogin) return yield* refuse(404, "not_found", "no such route");
@@ -263,7 +264,7 @@ const signInRoutes = Layer.mergeAll(
   HttpRouter.add(
     "POST",
     "/dev/login",
-    respond(
+    respondPage(
       Effect.gen(function* () {
         const config = yield* ControlPlaneConfig;
         if (!config.insecureDevLogin) return yield* refuse(404, "not_found", "no such route");

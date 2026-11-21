@@ -24,8 +24,9 @@ const SECURITY_HEADERS = {
   "referrer-policy": "no-referrer",
   "x-frame-options": "DENY",
 };
+// form-action also governs the redirect after a POST, which can go to a device's loopback listener.
 const PAGE_CSP =
-  "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; form-action 'self' https:; frame-ancestors 'none'; base-uri 'none'";
+  "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; connect-src 'self'; form-action 'self' https: http://127.0.0.1:* http://localhost:* http://[::1]:*; frame-ancestors 'none'; base-uri 'none'";
 
 export const json = (body: unknown, status = 200, contentType = "application/json") =>
   HttpServerResponse.jsonUnsafe(body, {
@@ -114,15 +115,29 @@ export const readForm = Effect.gen(function* () {
  */
 export const respond = <E, R>(
   handler: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
+  options?: { readonly page?: boolean },
 ): Effect.Effect<HttpServerResponse.HttpServerResponse, never, R> =>
   handler.pipe(
     Effect.catchCause((cause) => {
       const error = Cause.findErrorOption(cause);
       if (Option.isSome(error) && isRefusal(error.value)) {
-        return Effect.succeed(refusalResponse(error.value));
+        return Effect.succeed(
+          options?.page === true
+            ? messagePage("Cannot continue", error.value.reason, error.value.status)
+            : refusalResponse(error.value),
+        );
       }
       return Effect.logError("Control plane request failed", { cause }).pipe(
-        Effect.as(json({ error: "internal", message: "internal error" }, 500)),
+        Effect.as(
+          options?.page === true
+            ? messagePage("Something went wrong", "Try again in a moment.", 500)
+            : json({ error: "internal", message: "internal error" }, 500),
+        ),
       );
     }),
   );
+
+/** For routes a person's browser opens: refusals render as a page, not JSON. */
+export const respondPage = <E, R>(
+  handler: Effect.Effect<HttpServerResponse.HttpServerResponse, E, R>,
+) => respond(handler, { page: true });
