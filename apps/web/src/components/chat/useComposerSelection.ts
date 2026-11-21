@@ -90,7 +90,6 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     (store) => store.setStickyModelSelection,
   );
   const setComposerDraftModelSelection = useComposerDraftStore((store) => store.setModelSelection);
-  const recordModelSwitch = useComposerDraftStore((store) => store.recordModelSwitch);
   const setComposerDraftRuntimeMode = useComposerDraftStore((store) => store.setRuntimeMode);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const applyThreadModelPick = useApplyThreadModelPick();
@@ -134,8 +133,8 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     instanceId: ProviderInstanceId,
     model: string,
     options?: { focusComposer?: boolean },
-  ) => {
-    if (!activeThread) return;
+  ): ModelSelection | null => {
+    if (!activeThread) return null;
     const entry = providerStatuses.find((snapshot) => snapshot.instanceId === instanceId);
     const resolvedDriverKind = entry?.driver ?? null;
     if (
@@ -145,7 +144,7 @@ export function useComposerSelection(input: ComposerSelectionInput) {
       resolvedDriverKind !== lockedProvider
     ) {
       if (options?.focusComposer !== false) scheduleComposerFocus();
-      return;
+      return null;
     }
     if (
       !supportsProviderSwitchingViaHandoff &&
@@ -161,7 +160,7 @@ export function useComposerSelection(input: ComposerSelectionInput) {
         currentEntry.continuation.groupKey !== entry.continuation.groupKey
       ) {
         if (options?.focusComposer !== false) scheduleComposerFocus();
-        return;
+        return null;
       }
     }
     // The picker lists an unavailable model only as the active selection, so re-picking keeps it.
@@ -192,7 +191,7 @@ export function useComposerSelection(input: ComposerSelectionInput) {
       // Re-picking the shown model keeps its options and saves it again if that save failed.
       if (resolvedModel && !isLocalDraftThread) applyThreadModelPick(threadRef);
       if (options?.focusComposer !== false) scheduleComposerFocus();
-      return;
+      return null;
     }
     const rememberedOptions =
       useComposerDraftStore.getState().stickyOptionsByModelByProvider[instanceId]?.[resolvedModel];
@@ -228,16 +227,16 @@ export function useComposerSelection(input: ComposerSelectionInput) {
         description: modelChangeBlockReason.description,
       });
       if (options?.focusComposer !== false) scheduleComposerFocus();
-      return;
+      return null;
     }
     setComposerDraftModelSelection(threadRef, nextModelSelection, {
       explicit: true,
       replaceOptions: true,
     });
     setStickyComposerModelSelection(nextModelSelection);
-    recordModelSwitch(shownSelection, nextModelSelection);
     if (!isLocalDraftThread) applyThreadModelPick(threadRef);
     if (options?.focusComposer !== false) scheduleComposerFocus();
+    return nextModelSelection;
   };
   const onProviderModelSelectStable = useStableCallback(onProviderModelSelect);
   const onEnvModeChange = (mode: DraftThreadEnvMode) => {

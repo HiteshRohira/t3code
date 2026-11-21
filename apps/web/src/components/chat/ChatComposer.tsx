@@ -108,7 +108,6 @@ import {
   composerFileNeedsReattach,
   composerDraftHasUserContent,
   composerTargetKey,
-  lastUsedModelPicks,
   readComposerDraftPrompt,
   resolveLiveComposerDraftTarget,
   useComposerDraftStore,
@@ -273,6 +272,7 @@ import { useMediaQuery } from "../../hooks/useMediaQuery";
 import { Kbd } from "../ui/kbd";
 import { useSoftwareKeyboardOpen } from "../../hooks/useSoftwareKeyboardOpen";
 import { useStableCallback } from "../../hooks/useStableCallback";
+import { lastUsedModelCandidates } from "./ProviderModelPicker.logic";
 import { usePanelAnimationSettings } from "../../panelAnimations";
 import { readEnvironmentScope, readPreparedConnection } from "../../state/session";
 import type { ReviewCommentContext } from "../../reviewCommentContext";
@@ -475,11 +475,12 @@ export interface ChatComposerProps {
     cursorAdjacentToMention: boolean,
   ) => void;
 
+  /** Returns the committed selection, or null when the pick changed nothing. */
   onProviderModelSelect: (
     instanceId: ProviderInstanceId,
     model: string,
     options?: { focusComposer?: boolean },
-  ) => void;
+  ) => ModelSelection | null;
   onOpenProviderSetup: (instanceId: ProviderInstanceId) => void;
   getModelDisabledReason: (instanceId: ProviderInstanceId, model: string) => string | null;
   handleRuntimeModeChange: (mode: RuntimeMode) => void;
@@ -994,6 +995,37 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       ),
     );
   }
+
+  // Records against the shown model: the stored selection can be a placeholder or a missing provider.
+  const selectProviderModel = (
+    instanceId: ProviderInstanceId,
+    model: string,
+    options?: { focusComposer?: boolean },
+  ) => {
+    const from = selectedProviderEntry ? selectedModelSelection : null;
+    const to = onProviderModelSelect(instanceId, model, options);
+    if (to && (from?.instanceId !== to.instanceId || from.model !== to.model)) {
+      useComposerDraftStore.getState().recordModelSwitch(from, to);
+    }
+    return to;
+  };
+  const selectProviderModelStable = useStableCallback(selectProviderModel);
+  const switchToLastUsedModel = () => {
+    if (multipleModelSelections !== null || noProviderAvailable || isSendBusy) return;
+    const candidates = lastUsedModelCandidates({
+      picks: useComposerDraftStore.getState().recentModelPicks.picks,
+      current: selectedModelSelection,
+      entries: providerInstanceEntries,
+      optionsByInstance: modelOptionsByInstance,
+      lockedProvider,
+      lockedContinuationGroupKey,
+      getModelDisabledReason,
+    });
+    for (const candidate of candidates) {
+      if (selectProviderModel(candidate.instanceId, candidate.model)) return;
+    }
+  };
+  const switchToLastUsedModelStable = useStableCallback(switchToLastUsedModel);
 
   const selectedModelForPickerWithCustomFallback = (() => {
     const currentOptions = modelOptionsByInstance.get(selectedInstanceId) ?? [];
@@ -2537,7 +2569,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       multipleModelSelections={multipleModelSelections}
       onMultipleModelSelectionsChange={setMultipleModelSelections}
       selectedModelSelection={selectedModelSelection}
-      onProviderModelSelect={onProviderModelSelect}
+      onProviderModelSelect={selectProviderModelStable}
       activeThreadModelSelection={activeThreadModelSelection}
       selectedModelForPickerWithCustomFallback={selectedModelForPickerWithCustomFallback}
       lockedProvider={lockedProvider}
@@ -3096,23 +3128,6 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setIsComposerModelPickerOpen(true);
   };
   const openModelPickerStable = useStableCallback(openModelPicker);
-  // Pressing the picker's chord again while it is open switches back, like Alt-Tab.
-  const switchToLastUsedModel = () => {
-    if (multipleModelSelections !== null) return;
-    const target = lastUsedModelPicks(
-      useComposerDraftStore.getState().recentModelPicks,
-      selectedModelSelection,
-    ).find((pick) => {
-      const entry = providerInstanceEntries.find((e) => e.instanceId === pick.instanceId);
-      return (
-        entry !== undefined &&
-        (lockedProvider === null || entry.driverKind === lockedProvider) &&
-        getModelDisabledReason(pick.instanceId, pick.model) === null
-      );
-    });
-    if (target) onProviderModelSelect(target.instanceId, target.model);
-  };
-  const switchToLastUsedModelStable = useStableCallback(switchToLastUsedModel);
 
   useImperativeHandle(
     composerRef,
@@ -3373,6 +3388,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       applyPromptReplacementStable,
       isComposerModelPickerOpen,
       openModelPickerStable,
+      switchToLastUsedModelStable,
       readComposerSnapshotStable,
       resetComposerTrigger,
       setComposerTrigger,

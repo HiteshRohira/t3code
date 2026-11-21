@@ -93,7 +93,6 @@ import {
   type ComposerImageAttachment,
   composerFileNeedsReattach,
   hydrateImagesFromPersisted,
-  lastUsedModelPicks,
   partializeComposerDraftStoreState,
   useComposerDraftStore,
   DraftId,
@@ -184,7 +183,7 @@ function resetComposerDraftStore() {
     stickyModelSelectionByProvider: {},
     stickyOptionsByModelByProvider: {},
     stickyActiveProvider: null,
-    recentModelPicks: [],
+    recentModelPicks: { picks: [], at: 0 },
   });
 }
 
@@ -752,6 +751,37 @@ describe("composerDraftStore context persistence", () => {
       const saved = JSON.parse(sharedStorage.getItem(COMPOSER_DRAFT_STORAGE_KEY) as string);
       expect(saved.state.draftsByThreadKey[scopedThreadKey(betaRef)]?.prompt).toBe("beta draft");
       expect(saved.state.draftsByThreadKey[scopedThreadKey(alphaRef)]?.prompt).toBe("alpha draft");
+    } finally {
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+      vi.resetModules();
+    }
+  });
+
+  it("keeps this tab's latest model switch when it repeats picks another tab overwrote", async () => {
+    const sharedStorage = createMemoryStorage();
+    vi.stubGlobal("localStorage", sharedStorage);
+    vi.stubGlobal("window", new EventTarget());
+    vi.useFakeTimers();
+    vi.resetModules();
+    try {
+      const a = modelSelection(CODEX_DRIVER, "gpt-5.4");
+      const b = modelSelection(CODEX_DRIVER, "gpt-5.5");
+      const c = modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6");
+      const d = modelSelection(CLAUDE_AGENT_DRIVER, "claude-sonnet-4-6");
+      const thisTab = await import("./composerDraftStore");
+      thisTab.useComposerDraftStore.getState().recordModelSwitch(a, b);
+      await vi.advanceTimersByTimeAsync(300);
+      vi.resetModules();
+      const otherTab = await import("./composerDraftStore");
+      otherTab.useComposerDraftStore.getState().recordModelSwitch(c, d);
+      await vi.advanceTimersByTimeAsync(300);
+
+      thisTab.useComposerDraftStore.getState().recordModelSwitch(a, b);
+      await vi.advanceTimersByTimeAsync(300);
+
+      const saved = JSON.parse(sharedStorage.getItem(COMPOSER_DRAFT_STORAGE_KEY) as string);
+      expect(saved.state.recentModelPicks.picks).toEqual([b, a]);
     } finally {
       vi.useRealTimers();
       vi.unstubAllGlobals();
@@ -2174,26 +2204,19 @@ describe("composerDraftStore sticky composer settings", () => {
     });
   });
 
-  it("switches back to the model picked before, across reloads", () => {
+  it("remembers the last two picks across reloads, skipping invalid selections", () => {
     const opus = modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6");
     const sonnet = modelSelection(CLAUDE_AGENT_DRIVER, "claude-sonnet-4-6");
     const codex = modelSelection(CODEX_DRIVER, "gpt-5.4", { reasoningEffort: "high" });
-    const lastUsed = (current: ModelSelection) =>
-      lastUsedModelPicks(useComposerDraftStore.getState().recentModelPicks, current)[0];
+    const picks = () => useComposerDraftStore.getState().recentModelPicks.picks;
     const store = useComposerDraftStore.getState();
 
-    expect(lastUsed(opus)).toBeUndefined();
+    store.recordModelSwitch({ instanceId: ProviderInstanceId.make("none"), model: "" }, opus);
+    expect(picks()).toEqual([opus]);
     store.recordModelSwitch(opus, sonnet);
-    expect(lastUsed(sonnet)).toEqual(opus);
-    store.recordModelSwitch(sonnet, opus);
-    expect(lastUsed(opus)).toEqual(sonnet);
-    // Another thread on a model never picked here still gets the latest pick.
-    expect(lastUsed(codex)).toEqual(opus);
-    store.recordModelSwitch(codex, sonnet);
-    expect(useComposerDraftStore.getState().recentModelPicks).toEqual([
-      sonnet,
-      createModelSelection(CODEX_INSTANCE, "gpt-5.4"),
-    ]);
+    expect(picks()).toEqual([sonnet, opus]);
+    store.recordModelSwitch(sonnet, codex);
+    expect(picks()).toEqual([createModelSelection(CODEX_INSTANCE, "gpt-5.4"), sonnet]);
 
     const merge = useComposerDraftStore.persist.getOptions().merge!;
     const reloaded = merge(
@@ -2203,6 +2226,16 @@ describe("composerDraftStore sticky composer settings", () => {
       useComposerDraftStore.getInitialState(),
     );
     expect(reloaded.recentModelPicks).toEqual(useComposerDraftStore.getState().recentModelPicks);
+    const fromDuplicates = merge(
+      {
+        draftsByThreadKey: {},
+        draftThreadsByThreadKey: {},
+        logicalProjectDraftThreadKeyByLogicalProjectKey: {},
+        recentModelPicks: { picks: [opus, opus, sonnet], at: 1 },
+      },
+      useComposerDraftStore.getInitialState(),
+    );
+    expect(fromDuplicates.recentModelPicks.picks).toEqual([opus, sonnet]);
   });
 
   // regression: #6011 a stale seeded model overrode the project default

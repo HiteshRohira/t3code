@@ -443,7 +443,9 @@ const PersistedComposerDraftStoreState = Schema.Struct({
     Schema.Record(ProviderInstanceId, Schema.Record(Schema.String, ProviderOptionSelections)),
   ),
   stickyActiveProvider: Schema.optionalKey(Schema.NullOr(ProviderInstanceId)),
-  recentModelPicks: Schema.optionalKey(Schema.Array(ModelSelection)),
+  recentModelPicks: Schema.optionalKey(
+    Schema.Struct({ picks: Schema.Array(ModelSelection), at: Schema.Number }),
+  ),
 });
 type PersistedComposerDraftStoreState = typeof PersistedComposerDraftStoreState.Type;
 
@@ -566,7 +568,7 @@ interface ComposerDraftStoreState {
   >;
   stickyActiveProvider: ProviderInstanceId | null;
   /** The last two models picked in any composer, newest first, without options. */
-  recentModelPicks: ReadonlyArray<ModelSelection>;
+  recentModelPicks: RecentModelPicks;
   getComposerDraft: (target: ComposerThreadTarget) => ComposerThreadDraftState | null;
   getDraftSessionByLogicalProjectKey: (logicalProjectKey: string) => ProjectDraftSession | null;
   getDraftThreadByProjectRef: (projectRef: ScopedProjectRef) => ProjectDraftSession | null;
@@ -640,7 +642,7 @@ interface ComposerDraftStoreState {
   clearDraftThread: (threadRef: ComposerThreadTarget) => void;
   setStickyModelSelection: (modelSelection: ModelSelection | null | undefined) => void;
   /** Remembers a pick and the model it replaced, so the model picker can switch back. */
-  recordModelSwitch: (from: ModelSelection, to: ModelSelection) => void;
+  recordModelSwitch: (from: ModelSelection | null, to: ModelSelection) => void;
   setPrompt: (threadRef: ComposerThreadTarget, prompt: string) => void;
   setTerminalContexts: (threadRef: ComposerThreadTarget, contexts: TerminalContextDraft[]) => void;
   setModelSelection: (
@@ -857,6 +859,15 @@ function seedStickyOptionsByModel(
   return result as NonNullable<PersistedComposerDraftStoreState["stickyOptionsByModelByProvider"]>;
 }
 
+const RECENT_MODEL_PICK_LIMIT = 2;
+
+interface RecentModelPicks {
+  readonly picks: ReadonlyArray<ModelSelection>;
+  readonly at: number;
+}
+
+const EMPTY_RECENT_MODEL_PICKS: RecentModelPicks = { picks: [], at: 0 };
+
 const EMPTY_PERSISTED_DRAFT_STORE_STATE = Object.freeze<PersistedComposerDraftStoreState>({
   draftsByThreadKey: {},
   draftThreadsByThreadKey: {},
@@ -864,7 +875,7 @@ const EMPTY_PERSISTED_DRAFT_STORE_STATE = Object.freeze<PersistedComposerDraftSt
   stickyModelSelectionByProvider: {},
   stickyOptionsByModelByProvider: {},
   stickyActiveProvider: null,
-  recentModelPicks: [],
+  recentModelPicks: EMPTY_RECENT_MODEL_PICKS,
 });
 
 const EMPTY_IMAGES: ComposerImageAttachment[] = [];
@@ -1126,41 +1137,30 @@ function normalizeProviderModelOptions(
   return Object.keys(result).length > 0 ? result : null;
 }
 
-const RECENT_MODEL_PICK_LIMIT = 2;
-
-const sameModelPick = (a: ModelSelection, b: ModelSelection) =>
-  a.instanceId === b.instanceId && a.model === b.model;
-
-function nextRecentModelPicks(
-  current: ReadonlyArray<ModelSelection>,
-  from: ModelSelection,
-  to: ModelSelection,
+function recentModelPicksFrom(
+  candidates: ReadonlyArray<ModelSelection>,
 ): ReadonlyArray<ModelSelection> {
   const next: ModelSelection[] = [];
-  for (const pick of [to, from, ...current]) {
+  for (const pick of candidates) {
     if (next.length === RECENT_MODEL_PICK_LIMIT) break;
-    if (!next.some((kept) => sameModelPick(kept, pick))) {
+    if (!next.some((kept) => kept.instanceId === pick.instanceId && kept.model === pick.model)) {
       next.push(createModelSelection(pick.instanceId, pick.model));
     }
   }
   return next;
 }
 
-function normalizeRecentModelPicks(value: unknown): ReadonlyArray<ModelSelection> {
-  if (!Array.isArray(value)) return [];
-  return value
-    .map((pick) => normalizeModelSelection(pick))
-    .filter((pick): pick is NonNullable<typeof pick> => pick !== null)
-    .slice(0, RECENT_MODEL_PICK_LIMIT)
-    .map((pick) => createModelSelection(pick.instanceId, pick.model));
-}
-
-/** The models the picker's toggle chord switches to, most recent first: recent picks other than `current`. */
-export function lastUsedModelPicks(
-  recent: ReadonlyArray<ModelSelection>,
-  current: ModelSelection,
-): ReadonlyArray<ModelSelection> {
-  return recent.filter((pick) => !sameModelPick(pick, current));
+function normalizeRecentModelPicks(value: unknown): RecentModelPicks {
+  const candidate = value && typeof value === "object" ? (value as Record<string, unknown>) : null;
+  if (!candidate || !Array.isArray(candidate.picks)) return EMPTY_RECENT_MODEL_PICKS;
+  return {
+    picks: recentModelPicksFrom(
+      candidate.picks
+        .map((pick) => normalizeModelSelection(pick))
+        .filter((pick): pick is NonNullable<typeof pick> => pick !== null),
+    ),
+    at: typeof candidate.at === "number" ? candidate.at : 0,
+  };
 }
 
 function normalizeModelSelection(
@@ -2855,7 +2855,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
         stickyModelSelectionByProvider: {},
         stickyOptionsByModelByProvider: {},
         stickyActiveProvider: null,
-        recentModelPicks: [],
+        recentModelPicks: EMPTY_RECENT_MODEL_PICKS,
         getComposerDraft: (target) => getComposerDraftState(get(), target),
         getDraftSessionByLogicalProjectKey: (logicalProjectKey) => {
           const normalizedLogicalProjectKey = logicalProjectDraftKey(logicalProjectKey);
@@ -3282,12 +3282,20 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           });
         },
         recordModelSwitch: (from, to) => {
-          set((state) => {
-            const recentModelPicks = nextRecentModelPicks(state.recentModelPicks, from, to);
-            return Equal.equals(recentModelPicks, state.recentModelPicks)
-              ? state
-              : { recentModelPicks };
-          });
+          const next = normalizeModelSelection(to);
+          if (!next) return;
+          const previous = normalizeModelSelection(from);
+          set((state) => ({
+            recentModelPicks: {
+              picks: recentModelPicksFrom([
+                next,
+                ...(previous ? [previous] : []),
+                ...state.recentModelPicks.picks,
+              ]),
+              // A switch that leaves the picks unchanged still has to win the cross-tab merge.
+              at: Date.now(),
+            },
+          }));
         },
         applyStickyState: (threadRef) => {
           const threadKey = resolveComposerDraftKey(get(), threadRef) ?? "";
@@ -4580,7 +4588,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           stickyModelSelectionByProvider: normalizedPersisted.stickyModelSelectionByProvider ?? {},
           stickyOptionsByModelByProvider: normalizedPersisted.stickyOptionsByModelByProvider ?? {},
           stickyActiveProvider: normalizedPersisted.stickyActiveProvider ?? null,
-          recentModelPicks: normalizedPersisted.recentModelPicks ?? [],
+          recentModelPicks: normalizedPersisted.recentModelPicks ?? EMPTY_RECENT_MODEL_PICKS,
         };
       },
     },
