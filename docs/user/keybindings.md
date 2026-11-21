@@ -31,6 +31,8 @@ while a turn is running, or as a new turn when the thread is stopped. Change it 
 **Queue: Send First Queued Message** in Keybindings.
 
 Use `mod+shift+m` to choose a model and `mod+shift+h` to choose a host.
+Press `mod+shift+m` again while the model picker is open to switch back to the model you
+used last; Escape closes the picker without switching.
 To step a new thread to the next machine instead of opening the menu, bind
 **Composer: Cycle Host** in Keybindings. It has no default shortcut.
 Use `mod+shift+e` for effort, `mod+shift+a` for permissions, `mod+shift+x` for the

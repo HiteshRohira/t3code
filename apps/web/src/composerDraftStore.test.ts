@@ -93,6 +93,7 @@ import {
   type ComposerImageAttachment,
   composerFileNeedsReattach,
   hydrateImagesFromPersisted,
+  lastUsedModelPicks,
   partializeComposerDraftStoreState,
   useComposerDraftStore,
   DraftId,
@@ -183,6 +184,7 @@ function resetComposerDraftStore() {
     stickyModelSelectionByProvider: {},
     stickyOptionsByModelByProvider: {},
     stickyActiveProvider: null,
+    recentModelPicks: [],
   });
 }
 
@@ -2170,6 +2172,37 @@ describe("composerDraftStore sticky composer settings", () => {
         }),
       },
     });
+  });
+
+  it("switches back to the model picked before, across reloads", () => {
+    const opus = modelSelection(CLAUDE_AGENT_DRIVER, "claude-opus-4-6");
+    const sonnet = modelSelection(CLAUDE_AGENT_DRIVER, "claude-sonnet-4-6");
+    const codex = modelSelection(CODEX_DRIVER, "gpt-5.4", { reasoningEffort: "high" });
+    const lastUsed = (current: ModelSelection) =>
+      lastUsedModelPicks(useComposerDraftStore.getState().recentModelPicks, current)[0];
+    const store = useComposerDraftStore.getState();
+
+    expect(lastUsed(opus)).toBeUndefined();
+    store.recordModelSwitch(opus, sonnet);
+    expect(lastUsed(sonnet)).toEqual(opus);
+    store.recordModelSwitch(sonnet, opus);
+    expect(lastUsed(opus)).toEqual(sonnet);
+    // Another thread on a model never picked here still gets the latest pick.
+    expect(lastUsed(codex)).toEqual(opus);
+    store.recordModelSwitch(codex, sonnet);
+    expect(useComposerDraftStore.getState().recentModelPicks).toEqual([
+      sonnet,
+      createModelSelection(CODEX_INSTANCE, "gpt-5.4"),
+    ]);
+
+    const merge = useComposerDraftStore.persist.getOptions().merge!;
+    const reloaded = merge(
+      JSON.parse(
+        JSON.stringify(partializeComposerDraftStoreState(useComposerDraftStore.getState())),
+      ),
+      useComposerDraftStore.getInitialState(),
+    );
+    expect(reloaded.recentModelPicks).toEqual(useComposerDraftStore.getState().recentModelPicks);
   });
 
   // regression: #6011 a stale seeded model overrode the project default

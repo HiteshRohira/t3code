@@ -90,6 +90,7 @@ export function useComposerSelection(input: ComposerSelectionInput) {
     (store) => store.setStickyModelSelection,
   );
   const setComposerDraftModelSelection = useComposerDraftStore((store) => store.setModelSelection);
+  const recordModelSwitch = useComposerDraftStore((store) => store.recordModelSwitch);
   const setComposerDraftRuntimeMode = useComposerDraftStore((store) => store.setRuntimeMode);
   const setDraftThreadContext = useComposerDraftStore((store) => store.setDraftThreadContext);
   const applyThreadModelPick = useApplyThreadModelPick();
@@ -234,6 +235,7 @@ export function useComposerSelection(input: ComposerSelectionInput) {
       replaceOptions: true,
     });
     setStickyComposerModelSelection(nextModelSelection);
+    recordModelSwitch(shownSelection, nextModelSelection);
     if (!isLocalDraftThread) applyThreadModelPick(threadRef);
     if (options?.focusComposer !== false) scheduleComposerFocus();
   };

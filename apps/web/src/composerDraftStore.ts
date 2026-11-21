@@ -199,6 +199,7 @@ function mergeComposerDraftStates(
     ...pick("stickyModelSelectionByProvider"),
     ...pick("stickyOptionsByModelByProvider"),
     ...pick("stickyActiveProvider"),
+    ...pick("recentModelPicks"),
   };
 }
 
@@ -442,6 +443,7 @@ const PersistedComposerDraftStoreState = Schema.Struct({
     Schema.Record(ProviderInstanceId, Schema.Record(Schema.String, ProviderOptionSelections)),
   ),
   stickyActiveProvider: Schema.optionalKey(Schema.NullOr(ProviderInstanceId)),
+  recentModelPicks: Schema.optionalKey(Schema.Array(ModelSelection)),
 });
 type PersistedComposerDraftStoreState = typeof PersistedComposerDraftStoreState.Type;
 
@@ -563,6 +565,8 @@ interface ComposerDraftStoreState {
     Record<ProviderInstanceId, Partial<Record<string, ReadonlyArray<ProviderOptionSelection>>>>
   >;
   stickyActiveProvider: ProviderInstanceId | null;
+  /** The last two models picked in any composer, newest first, without options. */
+  recentModelPicks: ReadonlyArray<ModelSelection>;
   getComposerDraft: (target: ComposerThreadTarget) => ComposerThreadDraftState | null;
   getDraftSessionByLogicalProjectKey: (logicalProjectKey: string) => ProjectDraftSession | null;
   getDraftThreadByProjectRef: (projectRef: ScopedProjectRef) => ProjectDraftSession | null;
@@ -635,6 +639,8 @@ interface ComposerDraftStoreState {
   finalizePromotedDraftThread: (threadRef: ComposerThreadTarget) => void;
   clearDraftThread: (threadRef: ComposerThreadTarget) => void;
   setStickyModelSelection: (modelSelection: ModelSelection | null | undefined) => void;
+  /** Remembers a pick and the model it replaced, so the model picker can switch back. */
+  recordModelSwitch: (from: ModelSelection, to: ModelSelection) => void;
   setPrompt: (threadRef: ComposerThreadTarget, prompt: string) => void;
   setTerminalContexts: (threadRef: ComposerThreadTarget, contexts: TerminalContextDraft[]) => void;
   setModelSelection: (
@@ -858,6 +864,7 @@ const EMPTY_PERSISTED_DRAFT_STORE_STATE = Object.freeze<PersistedComposerDraftSt
   stickyModelSelectionByProvider: {},
   stickyOptionsByModelByProvider: {},
   stickyActiveProvider: null,
+  recentModelPicks: [],
 });
 
 const EMPTY_IMAGES: ComposerImageAttachment[] = [];
@@ -1117,6 +1124,43 @@ function normalizeProviderModelOptions(
   }
 
   return Object.keys(result).length > 0 ? result : null;
+}
+
+const RECENT_MODEL_PICK_LIMIT = 2;
+
+const sameModelPick = (a: ModelSelection, b: ModelSelection) =>
+  a.instanceId === b.instanceId && a.model === b.model;
+
+function nextRecentModelPicks(
+  current: ReadonlyArray<ModelSelection>,
+  from: ModelSelection,
+  to: ModelSelection,
+): ReadonlyArray<ModelSelection> {
+  const next: ModelSelection[] = [];
+  for (const pick of [to, from, ...current]) {
+    if (next.length === RECENT_MODEL_PICK_LIMIT) break;
+    if (!next.some((kept) => sameModelPick(kept, pick))) {
+      next.push(createModelSelection(pick.instanceId, pick.model));
+    }
+  }
+  return next;
+}
+
+function normalizeRecentModelPicks(value: unknown): ReadonlyArray<ModelSelection> {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((pick) => normalizeModelSelection(pick))
+    .filter((pick): pick is NonNullable<typeof pick> => pick !== null)
+    .slice(0, RECENT_MODEL_PICK_LIMIT)
+    .map((pick) => createModelSelection(pick.instanceId, pick.model));
+}
+
+/** The models the picker's toggle chord switches to, most recent first: recent picks other than `current`. */
+export function lastUsedModelPicks(
+  recent: ReadonlyArray<ModelSelection>,
+  current: ModelSelection,
+): ReadonlyArray<ModelSelection> {
+  return recent.filter((pick) => !sameModelPick(pick, current));
 }
 
 function normalizeModelSelection(
@@ -2498,6 +2542,7 @@ export function partializeComposerDraftStoreState(
       state.stickyOptionsByModelByProvider,
     ),
     stickyActiveProvider: state.stickyActiveProvider,
+    recentModelPicks: state.recentModelPicks,
   };
 }
 
@@ -2569,6 +2614,7 @@ function normalizeCurrentPersistedComposerDraftStoreState(
         ? seedStickyOptionsByModel(stickyModelSelectionByProvider)
         : compactStickyOptionsByModel(normalizedPersistedState.stickyOptionsByModelByProvider),
     stickyActiveProvider,
+    recentModelPicks: normalizeRecentModelPicks(normalizedPersistedState.recentModelPicks),
   };
 }
 
@@ -2809,6 +2855,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
         stickyModelSelectionByProvider: {},
         stickyOptionsByModelByProvider: {},
         stickyActiveProvider: null,
+        recentModelPicks: [],
         getComposerDraft: (target) => getComposerDraftState(get(), target),
         getDraftSessionByLogicalProjectKey: (logicalProjectKey) => {
           const normalizedLogicalProjectKey = logicalProjectDraftKey(logicalProjectKey);
@@ -3232,6 +3279,14 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
               stickyModelSelectionByProvider: nextMap,
               stickyActiveProvider: normalized.instanceId,
             };
+          });
+        },
+        recordModelSwitch: (from, to) => {
+          set((state) => {
+            const recentModelPicks = nextRecentModelPicks(state.recentModelPicks, from, to);
+            return Equal.equals(recentModelPicks, state.recentModelPicks)
+              ? state
+              : { recentModelPicks };
           });
         },
         applyStickyState: (threadRef) => {
@@ -4525,6 +4580,7 @@ const composerDraftStore = create<ComposerDraftStoreState>()(
           stickyModelSelectionByProvider: normalizedPersisted.stickyModelSelectionByProvider ?? {},
           stickyOptionsByModelByProvider: normalizedPersisted.stickyOptionsByModelByProvider ?? {},
           stickyActiveProvider: normalizedPersisted.stickyActiveProvider ?? null,
+          recentModelPicks: normalizedPersisted.recentModelPicks ?? [],
         };
       },
     },

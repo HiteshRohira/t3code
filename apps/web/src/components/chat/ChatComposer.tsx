@@ -108,6 +108,7 @@ import {
   composerFileNeedsReattach,
   composerDraftHasUserContent,
   composerTargetKey,
+  lastUsedModelPicks,
   readComposerDraftPrompt,
   resolveLiveComposerDraftTarget,
   useComposerDraftStore,
@@ -3095,6 +3096,23 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
     setIsComposerModelPickerOpen(true);
   };
   const openModelPickerStable = useStableCallback(openModelPicker);
+  // Pressing the picker's chord again while it is open switches back, like Alt-Tab.
+  const switchToLastUsedModel = () => {
+    if (multipleModelSelections !== null) return;
+    const target = lastUsedModelPicks(
+      useComposerDraftStore.getState().recentModelPicks,
+      selectedModelSelection,
+    ).find((pick) => {
+      const entry = providerInstanceEntries.find((e) => e.instanceId === pick.instanceId);
+      return (
+        entry !== undefined &&
+        (lockedProvider === null || entry.driverKind === lockedProvider) &&
+        getModelDisabledReason(pick.instanceId, pick.model) === null
+      );
+    });
+    if (target) onProviderModelSelect(target.instanceId, target.model);
+  };
+  const switchToLastUsedModelStable = useStableCallback(switchToLastUsedModel);
 
   useImperativeHandle(
     composerRef,
@@ -3176,6 +3194,7 @@ export const ChatComposer = memo(function ChatComposer(props: ChatComposerProps)
       },
       toggleModelPicker: () => {
         if (isComposerModelPickerOpen) {
+          switchToLastUsedModelStable();
           setIsComposerModelPickerOpen(false);
         } else {
           openModelPickerStable();
