@@ -1,5 +1,5 @@
 // A stand-in for api.anthropic.com that answers Messages API calls with a canned reply and logs
-// which key each request carried.
+// which key each request carried and whether a secret or a gateway redaction marker reached it.
 import * as NodeFS from "node:fs";
 import * as NodeHttp from "node:http";
 
@@ -16,9 +16,10 @@ NodeHttp.createServer((request, response) => {
     try {
       parsed = JSON.parse(body || "{}");
     } catch {}
+    const redactions = body.match(/\[REDACTED:[a-z-]+\]/g) ?? [];
     NodeFS.appendFileSync(
       log,
-      `${JSON.stringify({ at: new Date().toISOString(), path: request.url, key: request.headers["x-api-key"], model: parsed.model, stream: parsed.stream })}\n`,
+      `${JSON.stringify({ at: new Date().toISOString(), path: request.url, key: request.headers["x-api-key"], model: parsed.model, stream: parsed.stream, redactions: redactions.length, awsKeySeen: /AKIA[0-9A-Z]{16}/.test(body) })}\n`,
     );
     if (request.url?.startsWith("/v1/messages/count_tokens")) {
       response.writeHead(200, { "content-type": "application/json" });
@@ -34,7 +35,9 @@ NodeHttp.createServer((request, response) => {
     }
     const model = parsed.model ?? "claude-haiku-4-5";
     const text =
-      "Hello from the T3 Enterprise gateway. This reply came through the org's LLM gateway.";
+      redactions.length === 0
+        ? "Hello from the T3 Enterprise gateway. This reply came through the org's LLM gateway."
+        : `The gateway replaced secrets before they reached me: ${[...new Set(redactions)].join(", ")}.`;
     if (!parsed.stream) {
       response.writeHead(200, { "content-type": "application/json" });
       response.end(

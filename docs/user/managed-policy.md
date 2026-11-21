@@ -252,6 +252,20 @@ so restart T3 Code after that.
   relay connection traces. A policy cannot turn them on. A browser that opens the server, such as
   app.t3.codes, still sends its own relay traces.
 
+### Organization sign-in
+
+These two limits take effect on machines enrolled with an organization's T3 Enterprise control
+plane, which publishes the policy.
+
+- `pairing: "sso"`: another browser or device can pair with this machine only after its user
+  signs in with the organization and approves the connection as the machine's owner. Use
+  **Pair with sign-in** in Settings → Sharing & access. Plain pairing links are refused; on a
+  machine that is not enrolled, that means no new pairing at all.
+- `agentPullRequests`: `"draft"` opens agents' pull requests as drafts for a person to mark ready,
+  and `"human-only"` stops agents from opening them, so the user opens the pull request instead.
+  It covers agents using the GitHub CLI (`gh`) on macOS and Linux. The default, `"allowed"`,
+  changes nothing.
+
 ### Providers
 
 `providers.allowedDrivers` lists the providers that may run, by ID: `codex` (Codex),

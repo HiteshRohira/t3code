@@ -467,7 +467,7 @@ Object.assign(views, {
       el(
         "p",
         {},
-        `${live.length} enrolled machines. Versions: `,
+        `${live.length} enrolled ${live.length === 1 ? "machine" : "machines"}. Versions: `,
         [...versions].map(([version, count]) => `${version} × ${count}`).join(", ") || "none",
         ".",
       ),

@@ -1,28 +1,32 @@
 # Enterprise fork: plan
 
-Status: Phase 1 built, Phase 2 partly · Owner: Hitesh · Base: fork of `pingdotgg/t3code` (MIT)
+Status: Phases 1–3 built for desktop and web · Owner: Hitesh · Base: fork of `pingdotgg/t3code` (MIT)
 
 ## 0. Progress
 
 Operator guide: [README.md](README.md). Upstream edits: [UPSTREAM_TOUCHPOINTS.md](UPSTREAM_TOUCHPOINTS.md).
+Scope: desktop and web clients only (mobile deferred); customers host the control plane and
+gateway themselves; identity and device management stay vendor-neutral (§9).
 
-| Item                                                                        | State                                                              |
-| --------------------------------------------------------------------------- | ------------------------------------------------------------------ |
-| Milestone 1 (§10): gateway, control plane, leases, device agent, demo       | Done; verified with a real Claude Code turn through T3             |
-| SSO (OIDC + PKCE), group → role mapping, allowed groups                     | Done (SAML not yet)                                                |
-| Device enrollment, org CA, mTLS, cert-bound leases                          | Done (keys in files, not Secure Enclave/TPM yet)                   |
-| Roles: admin, maintainer, auditor, developer, viewer                        | Done in the control plane                                          |
-| Audit: device events, admin actions, JSONL/HTTP sinks, export API           | Done                                                               |
-| Signed central policy, `whenUnreachable` modes (§7)                         | Done; policy applies at restart (upstream reads it once)           |
-| SCIM 2.0 Users (Okta / Entra)                                               | Done (Groups endpoint not yet)                                     |
-| Budgets per user and team, model allow-lists, rate limits, usage reports    | Done                                                               |
-| Admin console                                                               | Done: users, devices, teams, policy, usage, audit                  |
-| `t3 enterprise enroll / status / unenroll`                                  | Done                                                               |
-| Enterprise status in the T3 Settings UI                                     | Not yet (CLI and in-chat errors only)                              |
-| SSO-gated pairing for web/mobile clients (§4.4)                             | Not yet; restrict with `clients` and `connect: false`              |
-| Secret redaction at the gateway, retention, data residency                  | Not yet                                                            |
-| Codex through the gateway                                                   | Routed (`OPENAI_BASE_URL`), not yet verified with a real Codex CLI |
-| Phase 3 team features, Phase 4 packaging (rebrand, signing, MDM installers) | Not yet; need decisions in §9                                      |
+| Item                                                                       | State                                                                                       |
+| -------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Milestone 1 (§10): gateway, control plane, leases, device agent, demo      | Done; Claude Code and Codex turns verified through T3                                       |
+| Control plane and gateway as Effect services                               | Done                                                                                        |
+| SSO: OIDC + PKCE, SAML 2.0, group → role mapping, allowed groups           | Done                                                                                        |
+| SCIM 2.0 Users and Groups (groups map to roles)                            | Done                                                                                        |
+| Device enrollment, org CA, mTLS, cert-bound leases, staged key rotation    | Done (device keys in files, not Secure Enclave/TPM yet)                                     |
+| Roles: admin, maintainer, auditor, developer, viewer                       | Done in the control plane                                                                   |
+| Audit: device events, admin actions, JSONL/HTTP sinks, export API          | Done                                                                                        |
+| Signed central policy, `whenUnreachable` modes (§7)                        | Done; a newer policy shows "Restart to apply" in Settings and the sidebar                   |
+| Budgets, model allow-lists, rate limits, usage reports                     | Done                                                                                        |
+| Secret redaction at the gateway (redact or block)                          | Done                                                                                        |
+| Data retention with legal holds; data residency by region-pinned upstreams | Done                                                                                        |
+| Enterprise status, enrollment, and restart in T3 Settings                  | Done                                                                                        |
+| SSO-gated pairing for web clients (§4.4)                                   | Done (`limits.pairing: "sso"`)                                                              |
+| Phase 3: fleet view, activity feed, org library, thread hand-offs          | Done                                                                                        |
+| Phase 3: agent pull-request gate (`limits.agentPullRequests`)              | Done for `gh` on macOS and Linux; not on Windows                                            |
+| Admin console                                                              | Done: users, devices, fleet, activity, teams, library, shared threads, policy, usage, audit |
+| Phase 4 packaging (rebrand, signing, MDM installers)                       | Not yet; needs the IdP/MDM discussion in §9                                                 |
 
 ## 1. Goal
 
@@ -290,12 +294,16 @@ Requirements either way:
 
 ## 9. Open questions
 
-- Which IdP and MDM do the first target customers use (Okta / Entra; Jamf / Intune / Kandji)?
-- Which providers are in scope first? Claude Code and Codex both support base URL overrides. Cursor,
-  Grok and others need a per-adapter decision.
-- Hosted SaaS control plane, customer-hosted, or both?
-- Is the browser/mobile client in scope for Phase 1, or desktop only?
-- Data residency: do prompts and audit logs need to stay in a region?
+Settled: customers host the control plane and gateway; desktop and web first, mobile later;
+data residency is per user or team region; Claude Code and Codex are routed, other providers stay
+out of `providers.allowedDrivers` until each is routed.
+
+- Identity and device management: customers use different IdPs (Okta, Entra, Google, Ping,
+  Keycloak) and MDMs (Jamf, Intune, Kandji, Workspace ONE). Standard OIDC, SAML, and SCIM cover
+  the IdPs. Still open: which IdP/MDM pairs to certify first, and whether enrollment should take
+  a device-attestation signal from the MDM, or stay with sign-in plus an org-issued certificate.
+- Device keys in the Secure Enclave or TPM instead of files: worth it once an MDM is chosen,
+  since attestation and key storage come from the same platform APIs.
 - Product name and bundle ID for the rebrand.
 
 ## 10. First milestone (proof of concept)

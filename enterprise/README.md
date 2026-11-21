@@ -16,12 +16,12 @@ enrolled machines can use them, and admins get policy, budgets, and an audit tra
                                      └──────────────────────────────────────┘
 ```
 
-| Piece         | Where                                                          | What it does                                                                                                                                                        |
-| ------------- | -------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| Control plane | [`control-plane/`](control-plane)                              | OIDC sign-in, SCIM 2.0, device CA and enrollment, short leases, signed policy, audit and usage, admin console                                                       |
-| Gateway       | [`gateway/`](gateway)                                          | Accepts only org-CA device certificates and valid leases; enforces revocation, budgets, model allow-lists, rate limits; holds the real provider keys; meters tokens |
-| Protocol      | [`protocol/`](protocol)                                        | Lease and policy tokens, certificate thumbprints, usage parsing, wire types                                                                                         |
-| Device agent  | [`apps/server/src/enterprise/`](../apps/server/src/enterprise) | Policy from the control plane, lease renewal, loopback proxy for provider CLIs, audit shipping, `t3 enterprise` CLI                                                 |
+| Piece         | Where                                                          | What it does                                                                                                                                                                                  |
+| ------------- | -------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Control plane | [`control-plane/`](control-plane)                              | OIDC or SAML sign-in, SCIM 2.0, device CA and enrollment, short leases, signed policy, audit and usage, retention, org library, shared threads, admin console                                 |
+| Gateway       | [`gateway/`](gateway)                                          | Accepts only org-CA device certificates and valid leases; enforces revocation, budgets, model allow-lists, rate limits, regions; redacts secrets; holds the real provider keys; meters tokens |
+| Protocol      | [`protocol/`](protocol)                                        | Lease and policy tokens, certificate thumbprints, usage parsing, wire types                                                                                                                   |
+| Device agent  | [`apps/server/src/enterprise/`](../apps/server/src/enterprise) | Policy from the control plane, lease renewal, loopback proxy for provider CLIs, audit shipping, heartbeats, org library install, thread hand-offs, `t3 enterprise` CLI                        |
 
 ## Why stock T3 Code cannot use the org's credits
 
@@ -42,7 +42,7 @@ valid. Budgets, rate limits, revocation, and the audit trail cover that.
 ## Try it locally
 
 ```sh
-enterprise/dev/demo.sh .t3/enterprise-demo      # control plane, gateway, mock Anthropic API
+enterprise/dev/demo.sh .t3/enterprise-demo      # control plane, gateway, mock Anthropic and OpenAI APIs
 export T3CODE_DEV_ENTERPRISE_CONFIG_PATH=$PWD/.t3/enterprise-demo/enterprise.json
 export T3CODE_ENTERPRISE_STATE_DIR=$PWD/.t3/enterprise-demo/device
 node apps/server/src/bin.ts enterprise enroll    # sign in with any email
@@ -50,9 +50,10 @@ vp run dev
 enterprise/dev/demo.sh .t3/enterprise-demo stop
 ```
 
-The mock API answers every Claude turn with a fixed reply and logs which key reached it. Admin
-console: `https://localhost:8443/admin` (development sign-in; give a user the `admin` role with
-the API token in `secrets.env`).
+The mock APIs answer every Claude and Codex turn with a fixed reply and log which key reached them;
+the Anthropic mock also says which redaction markers arrived instead of a secret. You can also
+enroll from Settings → General → Organization. Admin console: `https://localhost:8443/admin`
+(development sign-in; give a user the `admin` role with the API token in `secrets.env`).
 
 ## Deploy
 
@@ -66,26 +67,29 @@ Then edit `/srv/t3e/control-plane.json`:
 
 - Put a publicly trusted TLS certificate in `tls`, or terminate TLS yourself only if your proxy
   forwards client certificates. Device routes need the client certificate at this process.
-- Replace `insecureDevLogin` with `oidc`:
+- Replace `insecureDevLogin` with `oidc` or `saml`, and map groups to roles:
   ```json
-  "oidc": {
-    "issuer": "https://example.okta.com",
-    "clientId": "…",
-    "groupsClaim": "groups",
-    "allowedGroups": ["t3-users"],
-    "groupRoles": { "t3-admins": "admin", "t3-leads": "maintainer", "t3-security": "auditor", "t3-users": "developer" }
-  }
+  "oidc": { "issuer": "https://example.okta.com", "clientId": "…", "groupsClaim": "groups" },
+  "allowedGroups": ["t3-users"],
+  "groupRoles": { "t3-admins": "admin", "t3-leads": "maintainer", "t3-security": "auditor", "t3-users": "developer" }
   ```
-  Register `https://<host>/oidc/callback` as the redirect URI. The client secret is read from
-  `T3E_OIDC_CLIENT_SECRET`.
+  For OIDC, register `https://<host>/oidc/callback` as the redirect URI; the client secret is read
+  from `T3E_OIDC_CLIENT_SECRET`. For SAML, set `"saml": { "entryPoint": …, "idpCertificate": … }`
+  (plus `groupsAttribute` if the IdP sends groups), and give the IdP
+  `https://<host>/saml/metadata`; assertions must be signed and post to `/saml/acs`. Groups can
+  also come from SCIM, so an IdP that sends none at sign-in still maps to roles.
 - `provisioning: "scim"` admits only users your IdP provisioned. Point the IdP's SCIM 2.0 app at
-  `https://<host>/scim/v2` with `T3E_SCIM_TOKEN` as the bearer token. `department` (enterprise
-  extension) sets the user's team.
+  `https://<host>/scim/v2` with `T3E_SCIM_TOKEN` as the bearer token. It accepts Users and
+  Groups; `department` (enterprise extension) sets the user's team.
 - `defaultMonthlyTokens` and `defaultModels` set org-wide limits; teams and users override them in
   the admin console.
 - `auditSinks`: `{"type":"jsonl","path":…}` or `{"type":"http","url":…,"headers":{"Authorization":"$SPLUNK_HEC_TOKEN"}}`
   (a value starting with `$` is read from the environment). The database stays the source of
   truth; a SIEM can backfill from `GET /v1/admin/audit.jsonl?after=<seq>`.
+- `retention`: `{"auditDays": 365, "usageDays": 400, "leaseDays": 30}` deletes older rows daily.
+  Unset keeps them forever. A legal hold (Users tab) keeps a user's records past it.
+- `regions` and `defaultRegion` pin users or teams to a data region; the gateway then sends their
+  requests only to upstreams labelled with that region, and refuses when none is configured.
 
 Secrets come from the environment: `T3E_GATEWAY_TOKEN`, `T3E_SCIM_TOKEN`, `T3E_ADMIN_API_TOKEN`,
 `T3E_OIDC_CLIENT_SECRET`. Back up `dataDir`: it holds the CA key, signing keys, and the database.
@@ -106,9 +110,16 @@ no model access).
     { "family": "anthropic", "apiKeyEnv": "ANTHROPIC_API_KEY" },
     { "family": "openai", "apiKeyEnv": "OPENAI_API_KEY" }
   ],
-  "requestsPerMinute": 120
+  "requestsPerMinute": 120,
+  "redaction": { "mode": "redact" }
 }
 ```
+
+Add `"region": "eu"` to an upstream to serve only users and teams pinned to that region.
+`redaction.mode` is `redact` by default: private keys and cloud, GitHub, GitLab, Slack, Stripe,
+Google, Anthropic, and OpenAI tokens in a request become `[REDACTED:<kind>]` before it leaves.
+`block` refuses such requests instead; `off` forwards them. `detectors` narrows the list. Counts
+show in the Usage tab.
 
 `baseUrl` on an upstream points at Bedrock-, Vertex-, or Azure-compatible endpoints, or at an
 existing gateway such as LiteLLM. The gateway must reach the control plane; with no fresh state
@@ -120,7 +131,9 @@ Write a normal [managed policy](../docs/user/managed-policy.md), check it with
 `t3 policy check policy.json`, and publish it in the admin console's Policy tab. Devices fetch it
 every 15 minutes and apply it at the next start. Typical limits: `connect: false`,
 `clients: ["desktop"]`, `maxRuntimeMode`, `providers.allowedDrivers: ["claudeAgent", "codex"]`,
-`telemetry: false`.
+`telemetry: false`. Two limits exist for enterprise machines: `pairing: "sso"` lets another
+browser pair only after its user signs in with the IdP as the machine's owner, and
+`agentPullRequests` (`"draft"` or `"human-only"`) gates what agents may do with `gh pr`.
 
 ### 4. Devices
 
@@ -145,14 +158,27 @@ Do not also deploy a `policy.json`: an enterprise machine takes its policy from 
 and refuses to start with both. Add `serverCaPem` if the control plane or gateway uses a private
 CA.
 
-Each user then runs `t3 enterprise enroll` (or `--no-browser` over SSH), signs in, and restarts
-T3 Code. `t3 enterprise status` shows enrollment, model access, and policy version.
+Each user then enrolls from Settings → General → Organization, or with `t3 enterprise enroll`
+(`--no-browser` over SSH), and signs in. The same section shows model access and the policy
+version; when a newer policy arrives it offers **Restart to apply** (the desktop app restarts
+itself; a server started from the CLI says to restart it). `t3 enterprise status` shows the same
+in a terminal.
+
+### Team features
+
+- **Fleet and Activity** tabs show enrolled machines (version, health, active turns, policy) and a
+  live feed of agent work, filterable by team.
+- **Library**: skills, prompts, instructions, and MCP servers, for everyone or one team. Enrolled
+  machines install them into Claude Code's and Codex's own folders and keep them in sync;
+  unenrolling removes them.
+- **Hand-offs**: a thread's menu has **Hand off to colleagues**. Colleagues find it under
+  Settings → General → Organization and continue it as a new thread that starts from the
+  transcript and the thread's changes as a patch.
 
 ### Operations
 
-- **Rotate signing keys**: `t3-enterprise-control-plane rotate-keys`, deploy the new `policyKeys`
-  to devices, and only then let the new key sign (it signs immediately; deploy first in
-  production).
+- **Rotate signing keys**: `t3-enterprise-control-plane rotate-keys` stages a key and prints the
+  new `policyKeys`. Deploy them to devices, then run `activate-key` so the new key signs.
 - **Offline behavior**: leases last `leaseTtlSeconds` (4 h). With `whenUnreachable:
   "use-cached-until-expiry"` a device keeps working until then; `"deny"` stops model calls as soon
   as a renewal fails. Policy tokens expire after `policyTtlSeconds` (24 h), after which the device
